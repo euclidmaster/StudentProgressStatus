@@ -14,7 +14,7 @@ const App = {
             console.error('Supabase 연결 실패:', e);
             alert('서버 연결에 실패했습니다. 인터넷 연결을 확인해주세요.');
         }
-        if (supabaseOk && DataStore.getStudents().length === 0) {
+        if (supabaseOk) {
             await DataStore.initSampleData();
             await DataStore.initSampleMessages();
             await DataStore.initSampleTeachers();
