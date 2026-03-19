@@ -14,12 +14,6 @@ const App = {
             console.error('Supabase 연결 실패:', e);
             alert('서버 연결에 실패했습니다. 인터넷 연결을 확인해주세요.');
         }
-        if (supabaseOk) {
-            await DataStore.initSampleData();
-            await DataStore.initSampleMessages();
-            await DataStore.initSampleTeachers();
-            await DataStore.initSampleGrades();
-        }
         this.createToastContainer();
 
         // 로딩 화면 숨기기
@@ -360,27 +354,6 @@ const App = {
 
         document.getElementById('global-search').addEventListener('input', (e) => {
             if (this.currentView === 'students') this.renderStudents(e.target.value);
-        });
-
-        document.getElementById('btn-sample-data').addEventListener('click', async () => {
-            if (confirm('모든 데이터를 초기화하고 샘플 데이터를 새로 로드하시겠습니까?')) {
-                await DataStore.clearAll();
-                await DataStore.initSampleData();
-                await DataStore.initSampleMessages();
-                await DataStore.initSampleTeachers();
-                await DataStore.initSampleGrades();
-                // Re-login as current user
-                if (this.currentUser) {
-                    const refreshed = DataStore.refreshCurrentUser();
-                    if (!refreshed) {
-                        this.handleLogout();
-                        return;
-                    }
-                    this.currentUser = refreshed;
-                }
-                this.navigate(this.currentView);
-                this.toast('샘플 데이터가 로드되었습니다.', 'success');
-            }
         });
 
         document.querySelector('.modal-close').addEventListener('click', () => this.closeModal());

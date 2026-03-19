@@ -313,9 +313,7 @@ const DataStore = {
         return subjectProgress;
     },
 
-    // === SAMPLE DATA ===
-    async initSampleData() {
-        if (this.getStudents().length > 0) return false;
+    // === INTERNAL MESSAGES (원장 <-> 선생 소통) ===
 
         this._syncEnabled = false;
 
@@ -396,10 +394,6 @@ const DataStore = {
             if (error) console.error(`[Supabase] 배치삽입 오류 (${['students','plans','comments','progress'][idx]}):`, error);
         });
 
-        return true;
-    },
-
-    // === INTERNAL MESSAGES (원장 <-> 선생 소통) ===
     getMessages() {
         return this._getAll(this.TABLES.MESSAGES).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
@@ -438,31 +432,6 @@ const DataStore = {
         return this.getMessages().filter(m => !(m.readBy && m.readBy[reader])).length;
     },
 
-    async initSampleMessages() {
-        if (this.getMessages().length > 0) return;
-        const students = this.getStudents();
-        if (students.length === 0) return;
-
-        this._syncEnabled = false;
-
-        const msgs = [
-            { author: '원장', authorRole: 'director', studentId: students[0].id, title: '김민준 수학 진도 확인 요청', content: '김민준 학생의 수학 진도가 예정보다 빠르게 진행되고 있습니다. 심화 문제를 추가로 배정해주세요. 중간고사 대비 모의고사도 한 번 치르면 좋겠습니다.', readBy: {}, pinned: true },
-            { author: '김선생', authorRole: 'teacher', studentId: students[0].id, title: 'RE: 김민준 수학 진도 확인', content: '네, 확인했습니다. 이번 주부터 심화 유형 문제집을 추가 배정하겠습니다. 모의고사는 다음 주 수요일에 실시하겠습니다.', readBy: { '원장': '2026-03-16T10:30:00.000Z' }, pinned: false },
-            { author: '원장', authorRole: 'director', studentId: students[2].id, title: '박지호 기초 보강 방안 논의', content: '박지호 학생의 기초 실력이 아직 부족합니다. 방과후 추가 보충 수업을 편성할 수 있을까요? 학부모님도 요청하셨습니다.', readBy: {}, pinned: false },
-            { author: '이선생', authorRole: 'teacher', studentId: students[2].id, title: 'RE: 박지호 기초 보강 방안', content: '매주 화/목 4시에 30분씩 추가 보충 가능합니다. 현재 기초 연산과 기본 문법 위주로 진행하고 있으며, 서서히 나아지고 있습니다.', readBy: { '원장': '2026-03-17T09:00:00.000Z' }, pinned: false },
-            { author: '원장', authorRole: 'director', studentId: null, title: '이번 달 전체 학습 방향 안내', content: '중간고사가 4월 20일 시작입니다. 모든 선생님들은 3월 말까지 각 학생별 시험 범위 학습이 80% 이상 완료될 수 있도록 계획을 점검해주세요. 진도가 느린 학생은 별도 보고 부탁드립니다.', readBy: { '김선생': '2026-03-16T14:00:00.000Z' }, pinned: true },
-            { author: '박선생', authorRole: 'teacher', studentId: students[1].id, title: '이서연 심화 학습 보고', content: '이서연 학생은 현재 심화 과정을 잘 소화하고 있으며, 수학 오답률이 15%에서 8%로 줄었습니다. 다만 영어 독해 속도가 다소 느려 추가 연습이 필요합니다.', readBy: {}, pinned: false },
-            { author: '원장', authorRole: 'director', studentId: students[3].id, title: '최수아 학부모 상담 결과 공유', content: '최수아 학부모님과 전화 상담을 했습니다. 수학 성적 향상에 만족하고 계시나, 영어 독해 부분을 좀 더 신경 써달라는 요청이 있었습니다. 참고해주세요.', readBy: { '김선생': '2026-03-17T11:00:00.000Z' }, pinned: false }
-        ];
-
-        for (const m of msgs) await this.addMessage(m);
-
-        this._syncEnabled = true;
-
-        const { error } = await supabaseClient.from('messages').insert(this._getAll('messages').map(i => this._objToSnake(i)));
-        if (error) console.error('[Supabase] messages 배치삽입 오류:', error);
-    },
-
     // === GRADES (성적) ===
     getGrades() { return this._getAll(this.TABLES.GRADES); },
     getGrade(id) { return this._getById(this.TABLES.GRADES, id); },
@@ -493,80 +462,6 @@ const DataStore = {
                     return (typeOrder[a.examType] || 9) - (typeOrder[b.examType] || 9);
                 return (a.examDate || '').localeCompare(b.examDate || '');
             });
-    },
-
-    async initSampleGrades() {
-        if (this.getGrades().length > 0) return;
-        const students = this.getStudents();
-        if (students.length === 0) return;
-
-        this._syncEnabled = false;
-
-        const gradeData = [
-            { studentId: students[0].id, semester: '1학기', examType: '중간고사', examDate: '2025-04-20', totalRank: '15/180',
-              subjects: [
-                { subject: '수학', score: 85, grade: 'B+', rank: '12/180' },
-                { subject: '영어', score: 78, grade: 'C+', rank: '35/180' },
-                { subject: '국어', score: 90, grade: 'A', rank: '8/180' }
-              ] },
-            { studentId: students[0].id, semester: '1학기', examType: '기말고사', examDate: '2025-07-10', totalRank: '12/180',
-              subjects: [
-                { subject: '수학', score: 88, grade: 'B+', rank: '10/180' },
-                { subject: '영어', score: 82, grade: 'B', rank: '28/180' },
-                { subject: '국어', score: 87, grade: 'B+', rank: '12/180' }
-              ] },
-            { studentId: students[0].id, semester: '', examType: '모의고사', examDate: '2025-06-05', examName: '6월 모의고사', totalRank: '',
-              subjects: [
-                { subject: '국어', score: 92, grade: '2', standardScore: 131, percentile: 94 },
-                { subject: '수학', score: 88, grade: '2', standardScore: 137, percentile: 93 },
-                { subject: '영어', score: 85, grade: '2', standardScore: 0, percentile: 0 }
-              ] },
-            { studentId: students[1].id, semester: '2학기', examType: '중간고사', examDate: '2025-10-15', totalRank: '3/200',
-              subjects: [
-                { subject: '수학', score: 92, grade: 'A', rank: '5/200' },
-                { subject: '영어', score: 88, grade: 'B+', rank: '10/200' },
-                { subject: '국어', score: 85, grade: 'B+', rank: '15/200' },
-                { subject: '과학', score: 90, grade: 'A', rank: '6/200' }
-              ] },
-            { studentId: students[1].id, semester: '2학기', examType: '기말고사', examDate: '2025-12-18', totalRank: '2/200',
-              subjects: [
-                { subject: '수학', score: 95, grade: 'A+', rank: '2/200' },
-                { subject: '영어', score: 91, grade: 'A', rank: '7/200' },
-                { subject: '국어', score: 88, grade: 'B+', rank: '12/200' },
-                { subject: '과학', score: 93, grade: 'A', rank: '4/200' }
-              ] },
-            { studentId: students[1].id, semester: '', examType: '모의고사', examDate: '2025-09-03', examName: '9월 모의고사', totalRank: '',
-              subjects: [
-                { subject: '국어', score: 95, grade: '1', standardScore: 139, percentile: 97 },
-                { subject: '수학', score: 100, grade: '1', standardScore: 145, percentile: 99 },
-                { subject: '영어', score: 90, grade: '1', standardScore: 0, percentile: 0 }
-              ] },
-            { studentId: students[2].id, semester: '1학기', examType: '중간고사', examDate: '2025-04-20', totalRank: '45/160',
-              subjects: [
-                { subject: '수학', score: 70, grade: 'C', rank: '50/160' },
-                { subject: '영어', score: 65, grade: 'D+', rank: '60/160' }
-              ] },
-            { studentId: students[3].id, semester: '1학기', examType: '중간고사', examDate: '2025-04-20', totalRank: '25/180',
-              subjects: [
-                { subject: '수학', score: 75, grade: 'C+', rank: '30/180' },
-                { subject: '영어', score: 82, grade: 'B', rank: '22/180' },
-                { subject: '국어', score: 78, grade: 'C+', rank: '28/180' }
-              ] },
-            { studentId: students[4].id, semester: '2학기', examType: '중간고사', examDate: '2025-10-15', totalRank: '5/200',
-              subjects: [
-                { subject: '수학', score: 88, grade: 'B+', rank: '8/200' },
-                { subject: '영어', score: 92, grade: 'A', rank: '5/200' },
-                { subject: '국어', score: 90, grade: 'A', rank: '7/200' },
-                { subject: '과학', score: 85, grade: 'B+', rank: '12/200' }
-              ] }
-        ];
-
-        for (const g of gradeData) await this.addGrade(g);
-
-        this._syncEnabled = true;
-
-        const { error } = await supabaseClient.from('grades').insert(this._getAll('grades').map(i => this._objToSnake(i)));
-        if (error) console.error('[Supabase] grades 배치삽입 오류:', error);
     },
 
     // === TEACHERS / USERS ===
@@ -656,36 +551,4 @@ const DataStore = {
 
     async deleteTeacher(id) { return await this._delete(this.TABLES.TEACHERS, id); },
 
-    async initSampleTeachers() {
-        if (this.getTeachers().length > 0) return;
-        const students = this.getStudents();
-        if (students.length === 0) return;
-
-        this._syncEnabled = false;
-
-        const teachers = [
-            { loginId: 'director', password: '1234', name: '원장', role: 'director', assignedStudentIds: students.map(s => s.id) },
-            { loginId: 'kimteacher', password: '1234', name: '김선생', role: 'teacher', assignedStudentIds: [students[0].id, students[2].id, students[3].id] },
-            { loginId: 'parkteacher', password: '1234', name: '박선생', role: 'teacher', assignedStudentIds: [students[1].id, students[2].id, students[4].id] },
-            { loginId: 'leeteacher', password: '1234', name: '이선생', role: 'teacher', assignedStudentIds: [students[2].id, students[4].id] }
-        ];
-
-        for (const t of teachers) await this.addTeacher(t);
-
-        this._syncEnabled = true;
-
-        const { error } = await supabaseClient.from('teachers').insert(this._getAll('teachers').map(i => this._objToSnake(i)));
-        if (error) console.error('[Supabase] teachers 배치삽입 오류:', error);
-    },
-
-    async clearAll() {
-        // 캐시 초기화
-        Object.values(this.TABLES).forEach(table => { this._cache[table] = []; });
-        localStorage.removeItem(this.CURRENT_USER_KEY);
-
-        // Supabase 테이블 전체 삭제
-        await Promise.all(Object.values(this.TABLES).map(table =>
-            supabaseClient.from(table).delete().not('id', 'is', null)
-        ));
-    }
 };
