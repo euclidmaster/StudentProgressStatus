@@ -1094,9 +1094,12 @@ const App = {
 
         if (!studentId || !planId || !amount || !date) return;
 
-        DataStore.addProgressEntry({ studentId, planId, amount, date, note });
-        this.toast('진도가 기록되었습니다!', 'success');
-        this.renderProgress();
+        DataStore.addProgressEntry({ studentId, planId, amount, date, note }).then(() => {
+            this.toast('진도가 기록되었습니다!', 'success');
+            this.renderProgress();
+        }).catch(err => {
+            this.toast('진도 저장 실패: ' + err.message, 'error');
+        });
     },
 
     // =========================================
@@ -1646,7 +1649,7 @@ const App = {
         });
 
         // Submit
-        document.getElementById('grade-form').addEventListener('submit', (e) => {
+        document.getElementById('grade-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const studentId = isEdit ? gradeObj.studentId : form.studentId.value;
@@ -1679,16 +1682,18 @@ const App = {
                 subjects
             };
 
-            if (isEdit) {
-                DataStore.updateGrade(gradeObj.id, data);
-                this.toast('성적이 수정되었습니다.', 'success');
-            } else {
-                DataStore.addGrade(data);
-                this.toast('성적이 저장되었습니다.', 'success');
-            }
-            this.closeModal();
-            if (this.currentView === 'grades') this.renderGrades();
-            else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+            try {
+                if (isEdit) {
+                    await DataStore.updateGrade(gradeObj.id, data);
+                    this.toast('성적이 수정되었습니다.', 'success');
+                } else {
+                    await DataStore.addGrade(data);
+                    this.toast('성적이 저장되었습니다.', 'success');
+                }
+                this.closeModal();
+                if (this.currentView === 'grades') this.renderGrades();
+                else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+            } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         });
     },
 
@@ -1783,7 +1788,7 @@ const App = {
 
         this.openModal(isEdit ? '학생 정보 수정' : '새 학생 등록', html);
 
-        document.getElementById('student-form').addEventListener('submit', (e) => {
+        document.getElementById('student-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const data = {
@@ -1798,17 +1803,19 @@ const App = {
                 notes: form.notes.value.trim()
             };
 
-            if (isEdit) {
-                DataStore.updateStudent(student.id, data);
-                this.toast('학생 정보가 수정되었습니다.', 'success');
-            } else {
-                DataStore.addStudent(data);
-                this.toast('새 학생이 등록되었습니다.', 'success');
-            }
+            try {
+                if (isEdit) {
+                    await DataStore.updateStudent(student.id, data);
+                    this.toast('학생 정보가 수정되었습니다.', 'success');
+                } else {
+                    await DataStore.addStudent(data);
+                    this.toast('새 학생이 등록되었습니다.', 'success');
+                }
 
-            this.closeModal();
-            if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
-            else this.navigate('students');
+                this.closeModal();
+                if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+                else this.navigate('students');
+            } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         });
     },
 
@@ -1893,7 +1900,7 @@ const App = {
 
         this.openModal(isEdit ? '학습 계획 수정' : '학습 계획 추가', html);
 
-        document.getElementById('plan-form').addEventListener('submit', (e) => {
+        document.getElementById('plan-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const data = {
@@ -1911,17 +1918,19 @@ const App = {
                 completedUnits: parseInt(form.completedUnits.value) || 0
             };
 
-            if (isEdit) {
-                DataStore.updatePlan(plan.id, data);
-                this.toast('학습 계획이 수정되었습니다.', 'success');
-            } else {
-                DataStore.addPlan(data);
-                this.toast('학습 계획이 추가되었습니다.', 'success');
-            }
+            try {
+                if (isEdit) {
+                    await DataStore.updatePlan(plan.id, data);
+                    this.toast('학습 계획이 수정되었습니다.', 'success');
+                } else {
+                    await DataStore.addPlan(data);
+                    this.toast('학습 계획이 추가되었습니다.', 'success');
+                }
 
-            this.closeModal();
-            if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
-            else this.navigate('plans');
+                this.closeModal();
+                if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
+                else this.navigate('plans');
+            } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         });
     },
 
@@ -1965,20 +1974,22 @@ const App = {
 
         this.openModal('진도 입력', html);
 
-        document.getElementById('progress-form').addEventListener('submit', (e) => {
+        document.getElementById('progress-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
-            DataStore.addProgressEntry({
-                studentId,
-                planId,
-                amount: parseInt(form.amount.value),
-                date: form.date.value,
-                note: form.note.value.trim()
-            });
-            this.toast('진도가 기록되었습니다!', 'success');
-            this.closeModal();
-            if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
-            else this.navigate(this.currentView);
+            try {
+                await DataStore.addProgressEntry({
+                    studentId,
+                    planId,
+                    amount: parseInt(form.amount.value),
+                    date: form.date.value,
+                    note: form.note.value.trim()
+                });
+                this.toast('진도가 기록되었습니다!', 'success');
+                this.closeModal();
+                if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
+                else this.navigate(this.currentView);
+            } catch(err) { this.toast('진도 저장 실패: ' + err.message, 'error'); }
         });
     },
 
@@ -2034,35 +2045,37 @@ const App = {
 
         this.openModal('코멘트 작성 / 전달', html);
 
-        document.getElementById('comment-form').addEventListener('submit', (e) => {
+        document.getElementById('comment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const recipients = Array.from(form.querySelectorAll('input[name="recipient"]:checked')).map(cb => cb.value);
 
-            DataStore.addComment({
-                studentId,
-                planId: form.planId.value || null,
-                author: form.author.value.trim(),
-                authorRole: form.authorRole.value,
-                content: form.content.value.trim(),
-                recipients
-            });
-            this.toast(`코멘트가 전달되었습니다. (${recipients.map(r => r === 'student' ? '학생' : r === 'parent' ? '학부모' : '원장').join(', ')})`, 'success');
-            this.closeModal();
-            if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
-            else this.navigate(this.currentView);
+            try {
+                await DataStore.addComment({
+                    studentId,
+                    planId: form.planId.value || null,
+                    author: form.author.value.trim(),
+                    authorRole: form.authorRole.value,
+                    content: form.content.value.trim(),
+                    recipients
+                });
+                this.toast(`코멘트가 전달되었습니다. (${recipients.map(r => r === 'student' ? '학생' : r === 'parent' ? '학부모' : '원장').join(', ')})`, 'success');
+                this.closeModal();
+                if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
+                else this.navigate(this.currentView);
+            } catch(err) { this.toast('코멘트 저장 실패: ' + err.message, 'error'); }
         });
     },
 
     // =========================================
     //  EVENT DELEGATION
     // =========================================
-    handleContentClick(e) {
+    async handleContentClick(e) {
         // For checkboxes with data-action, use the input itself
         if (e.target.tagName === 'INPUT' && e.target.dataset.action === 'toggle-read') {
             const msgId = e.target.dataset.messageId;
             const reader = e.target.dataset.reader;
-            DataStore.toggleReadBy(msgId, reader);
+            try { await DataStore.toggleReadBy(msgId, reader); } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
             this.renderMessages();
             this.updateUnreadBadge();
             return;
@@ -2101,9 +2114,11 @@ const App = {
 
             case 'delete-student':
                 if (confirm('이 학생의 모든 데이터(학습 계획, 진도, 코멘트)가 삭제됩니다. 삭제하시겠습니까?')) {
-                    DataStore.deleteStudent(id);
-                    this.toast('학생이 삭제되었습니다.', 'success');
-                    this.navigate('students');
+                    try {
+                        await DataStore.deleteStudent(id);
+                        this.toast('학생이 삭제되었습니다.', 'success');
+                        this.navigate('students');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                 }
                 break;
 
@@ -2119,10 +2134,12 @@ const App = {
 
             case 'delete-plan':
                 if (confirm('이 학습 계획과 관련된 진도 기록이 모두 삭제됩니다. 삭제하시겠습니까?')) {
-                    DataStore.deletePlan(planId);
-                    this.toast('학습 계획이 삭제되었습니다.', 'success');
-                    if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
-                    else this.navigate('plans');
+                    try {
+                        await DataStore.deletePlan(planId);
+                        this.toast('학습 계획이 삭제되었습니다.', 'success');
+                        if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
+                        else this.navigate('plans');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                 }
                 break;
 
@@ -2136,10 +2153,12 @@ const App = {
 
             case 'delete-comment':
                 if (confirm('이 코멘트를 삭제하시겠습니까?')) {
-                    DataStore.deleteComment(commentId);
-                    this.toast('코멘트가 삭제되었습니다.', 'success');
-                    if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
-                    else this.navigate('comments');
+                    try {
+                        await DataStore.deleteComment(commentId);
+                        this.toast('코멘트가 삭제되었습니다.', 'success');
+                        if (this.currentView === 'student-detail') this.renderStudentDetail(studentId);
+                        else this.navigate('comments');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                 }
                 break;
 
@@ -2150,7 +2169,7 @@ const App = {
             case 'toggle-read': {
                 const msgId = target.dataset.messageId;
                 const reader = target.dataset.reader;
-                DataStore.toggleReadBy(msgId, reader);
+                try { await DataStore.toggleReadBy(msgId, reader); } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
                 this.renderMessages();
                 this.updateUnreadBadge();
                 break;
@@ -2159,7 +2178,9 @@ const App = {
             case 'pin-message': {
                 const msg = DataStore.getMessage(target.dataset.messageId);
                 if (msg) {
-                    DataStore.updateMessage(msg.id, { pinned: !msg.pinned });
+                    try {
+                        await DataStore.updateMessage(msg.id, { pinned: !msg.pinned });
+                    } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
                     this.renderMessages();
                 }
                 break;
@@ -2167,8 +2188,10 @@ const App = {
 
             case 'delete-message':
                 if (confirm('이 메시지를 삭제하시겠습니까?')) {
-                    DataStore.deleteMessage(target.dataset.messageId);
-                    this.toast('메시지가 삭제되었습니다.', 'success');
+                    try {
+                        await DataStore.deleteMessage(target.dataset.messageId);
+                        this.toast('메시지가 삭제되었습니다.', 'success');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                     this.renderMessages();
                     this.updateUnreadBadge();
                 }
@@ -2191,8 +2214,10 @@ const App = {
 
             case 'delete-grade':
                 if (confirm('이 성적을 삭제하시겠습니까?')) {
-                    DataStore.deleteGrade(target.dataset.gradeId);
-                    this.toast('성적이 삭제되었습니다.', 'success');
+                    try {
+                        await DataStore.deleteGrade(target.dataset.gradeId);
+                        this.toast('성적이 삭제되었습니다.', 'success');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                     if (this.currentView === 'grades') this.renderGrades();
                     else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
                 }
@@ -2220,8 +2245,10 @@ const App = {
                 const tid = target.dataset.teacherId;
                 const sid = target.dataset.studentId;
                 if (confirm('이 학생의 담당을 해제하시겠습니까?')) {
-                    DataStore.unassignStudentFromTeacher(tid, sid);
-                    this.toast('담당이 해제되었습니다.', 'success');
+                    try {
+                        await DataStore.unassignStudentFromTeacher(tid, sid);
+                        this.toast('담당이 해제되었습니다.', 'success');
+                    } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
                     this.renderTeachers();
                 }
                 break;
@@ -2237,8 +2264,10 @@ const App = {
 
             case 'delete-teacher':
                 if (confirm('이 선생님을 삭제하시겠습니까? 담당 학생 지정도 모두 해제됩니다.')) {
-                    DataStore.deleteTeacher(target.dataset.teacherId);
-                    this.toast('선생님이 삭제되었습니다.', 'success');
+                    try {
+                        await DataStore.deleteTeacher(target.dataset.teacherId);
+                        this.toast('선생님이 삭제되었습니다.', 'success');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                     this.renderTeachers();
                 }
                 break;
@@ -2247,11 +2276,13 @@ const App = {
                 const userId = target.dataset.userId;
                 const pendingUser = DataStore.getTeacher(userId);
                 if (pendingUser) {
-                    DataStore.approveUser(userId);
-                    if (pendingUser.studentId) {
-                        DataStore.updateStudent(pendingUser.studentId, { status: '재원' });
-                    }
-                    this.toast(`${pendingUser.name}님의 가입을 승인했습니다.`, 'success');
+                    try {
+                        await DataStore.approveUser(userId);
+                        if (pendingUser.studentId) {
+                            await DataStore.updateStudent(pendingUser.studentId, { status: '재원' });
+                        }
+                        this.toast(`${pendingUser.name}님의 가입을 승인했습니다.`, 'success');
+                    } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
                     this.renderTeachers();
                 }
                 break;
@@ -2259,9 +2290,11 @@ const App = {
 
             case 'reject-user':
                 if (confirm('이 가입 신청을 거절하시겠습니까?')) {
-                    const rUserId = target.dataset.userId;
-                    DataStore.rejectUser(rUserId);
-                    this.toast('가입 신청이 거절되었습니다.', 'success');
+                    try {
+                        const rUserId = target.dataset.userId;
+                        await DataStore.rejectUser(rUserId);
+                        this.toast('가입 신청이 거절되었습니다.', 'success');
+                    } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
                     this.renderTeachers();
                 }
                 break;
@@ -2468,7 +2501,7 @@ const App = {
 
         this.openModal(isEdit ? '선생님 정보 수정' : '새 선생님 등록', html);
 
-        document.getElementById('teacher-form').addEventListener('submit', (e) => {
+        document.getElementById('teacher-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const name = form.name.value.trim();
@@ -2480,18 +2513,20 @@ const App = {
                 return;
             }
 
-            if (isEdit) {
-                const updates = { name };
-                if (password) updates.password = password;
-                DataStore.updateTeacher(teacher.id, updates);
-                this.toast('선생님 정보가 수정되었습니다.', 'success');
-            } else {
-                DataStore.addTeacher({ name, loginId, password: password || '1234', role: 'teacher', assignedStudentIds: [] });
-                this.toast('새 선생님이 등록되었습니다.', 'success');
-            }
+            try {
+                if (isEdit) {
+                    const updates = { name };
+                    if (password) updates.password = password;
+                    await DataStore.updateTeacher(teacher.id, updates);
+                    this.toast('선생님 정보가 수정되었습니다.', 'success');
+                } else {
+                    await DataStore.addTeacher({ name, loginId, password: password || '1234', role: 'teacher', assignedStudentIds: [] });
+                    this.toast('새 선생님이 등록되었습니다.', 'success');
+                }
 
-            this.closeModal();
-            this.renderTeachers();
+                this.closeModal();
+                this.renderTeachers();
+            } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         });
     },
 
@@ -2524,14 +2559,16 @@ const App = {
 
         this.openModal('담당 학생 지정 - ' + teacher.name, html);
 
-        document.getElementById('teacher-assign-form').addEventListener('submit', (e) => {
+        document.getElementById('teacher-assign-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const selectedIds = [...form.querySelectorAll('input[name="studentIds"]:checked')].map(cb => cb.value);
-            DataStore.updateTeacher(teacherId, { assignedStudentIds: selectedIds });
-            this.toast('담당 학생이 변경되었습니다.', 'success');
-            this.closeModal();
-            this.renderTeachers();
+            try {
+                await DataStore.updateTeacher(teacherId, { assignedStudentIds: selectedIds });
+                this.toast('담당 학생이 변경되었습니다.', 'success');
+                this.closeModal();
+                this.renderTeachers();
+            } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         });
     },
 
@@ -2698,10 +2735,10 @@ const App = {
         this.openModal(msg.title, html);
     },
 
-    handleReadToggleInModal(checkbox) {
+    async handleReadToggleInModal(checkbox) {
         const messageId = checkbox.dataset.messageId;
         const reader = checkbox.dataset.reader;
-        DataStore.toggleReadBy(messageId, reader);
+        try { await DataStore.toggleReadBy(messageId, reader); } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         this.updateUnreadBadge();
         this.showMessageDetail(messageId);
         if (this.currentView === 'messages') this.renderMessages();
@@ -2757,21 +2794,23 @@ const App = {
 
         this.openModal('새 메시지 작성', html);
 
-        document.getElementById('message-form').addEventListener('submit', (e) => {
+        document.getElementById('message-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
-            DataStore.addMessage({
-                author: form.author.value.trim(),
-                authorRole: form.authorRole.value,
-                studentId: form.studentId.value || null,
-                title: form.title.value.trim(),
-                content: form.content.value.trim(),
-                pinned: form.pinned.checked
-            });
-            this.toast('메시지가 전송되었습니다.', 'success');
-            this.closeModal();
-            this.renderMessages();
-            this.updateUnreadBadge();
+            try {
+                await DataStore.addMessage({
+                    author: form.author.value.trim(),
+                    authorRole: form.authorRole.value,
+                    studentId: form.studentId.value || null,
+                    title: form.title.value.trim(),
+                    content: form.content.value.trim(),
+                    pinned: form.pinned.checked
+                });
+                this.toast('메시지가 전송되었습니다.', 'success');
+                this.closeModal();
+                this.renderMessages();
+                this.updateUnreadBadge();
+            } catch(err) { this.toast('메시지 전송 실패: ' + err.message, 'error'); }
         });
     }
 };

@@ -89,44 +89,79 @@ const DataStore = {
         return this._getAll(table).find(item => item.id === id) || null;
     },
 
-    _add(table, item) {
+    async _add(table, item) {
         item.id = this.generateId();
         item.createdAt = new Date().toISOString();
         this._cache[table].push(item);
 
         if (this._syncEnabled) {
-            supabaseClient.from(table).insert(this._objToSnake(item)).then(({ error }) => {
-                if (error) console.error(`[Supabase] ${table} 삽입 오류:`, error);
-            });
+            try {
+                const { error } = await supabaseClient.from(table).insert(this._objToSnake(item));
+                if (error) {
+                    console.error(`[Supabase] ${table} 삽입 오류:`, error);
+                    this._cache[table] = this._cache[table].filter(i => i.id !== item.id);
+                    throw new Error(error.message);
+                }
+            } catch (err) {
+                if (err.message && !err.message.includes('삽입')) {
+                    console.error(`[Supabase] ${table} 네트워크 오류:`, err);
+                    this._cache[table] = this._cache[table].filter(i => i.id !== item.id);
+                }
+                throw err;
+            }
         }
         return item;
     },
 
-    _update(table, id, updates) {
+    async _update(table, id, updates) {
         const items = this._cache[table];
         const idx = items.findIndex(item => item.id === id);
         if (idx === -1) return null;
+        const backup = { ...items[idx] };
         updates.updatedAt = new Date().toISOString();
         items[idx] = { ...items[idx], ...updates };
 
         if (this._syncEnabled) {
-            supabaseClient.from(table).update(this._objToSnake(updates)).eq('id', id).then(({ error }) => {
-                if (error) console.error(`[Supabase] ${table} 수정 오류:`, error);
-            });
+            try {
+                const { error } = await supabaseClient.from(table).update(this._objToSnake(updates)).eq('id', id);
+                if (error) {
+                    console.error(`[Supabase] ${table} 수정 오류:`, error);
+                    items[idx] = backup;
+                    throw new Error(error.message);
+                }
+            } catch (err) {
+                if (err.message && !err.message.includes('수정')) {
+                    console.error(`[Supabase] ${table} 네트워크 오류:`, err);
+                    items[idx] = backup;
+                }
+                throw err;
+            }
         }
         return items[idx];
     },
 
-    _delete(table, id) {
+    async _delete(table, id) {
         const items = this._cache[table];
         const filtered = items.filter(item => item.id !== id);
+        const deletedItem = items.find(item => item.id === id);
         const deleted = filtered.length < items.length;
         this._cache[table] = filtered;
 
         if (this._syncEnabled && deleted) {
-            supabaseClient.from(table).delete().eq('id', id).then(({ error }) => {
-                if (error) console.error(`[Supabase] ${table} 삭제 오류:`, error);
-            });
+            try {
+                const { error } = await supabaseClient.from(table).delete().eq('id', id);
+                if (error) {
+                    console.error(`[Supabase] ${table} 삭제 오류:`, error);
+                    if (deletedItem) this._cache[table].push(deletedItem);
+                    throw new Error(error.message);
+                }
+            } catch (err) {
+                if (err.message && !err.message.includes('삭제')) {
+                    console.error(`[Supabase] ${table} 네트워크 오류:`, err);
+                    if (deletedItem) this._cache[table].push(deletedItem);
+                }
+                throw err;
+            }
         }
         return deleted;
     },
@@ -134,12 +169,12 @@ const DataStore = {
     // === STUDENTS ===
     getStudents() { return this._getAll(this.TABLES.STUDENTS); },
     getStudent(id) { return this._getById(this.TABLES.STUDENTS, id); },
-    addStudent(student) { return this._add(this.TABLES.STUDENTS, student); },
-    updateStudent(id, updates) { return this._update(this.TABLES.STUDENTS, id, updates); },
-    deleteStudent(id) {
-        this.getStudentPlans(id).forEach(p => this.deletePlan(p.id));
-        this.getStudentComments(id).forEach(c => this._delete(this.TABLES.COMMENTS, c.id));
-        return this._delete(this.TABLES.STUDENTS, id);
+    async addStudent(student) { return await this._add(this.TABLES.STUDENTS, student); },
+    async updateStudent(id, updates) { return await this._update(this.TABLES.STUDENTS, id, updates); },
+    async deleteStudent(id) {
+        for (const p of this.getStudentPlans(id)) await this.deletePlan(p.id);
+        for (const c of this.getStudentComments(id)) await this._delete(this.TABLES.COMMENTS, c.id);
+        return await this._delete(this.TABLES.STUDENTS, id);
     },
 
     searchStudents(query) {
@@ -165,16 +200,16 @@ const DataStore = {
     // === PLANS ===
     getPlans() { return this._getAll(this.TABLES.PLANS); },
     getPlan(id) { return this._getById(this.TABLES.PLANS, id); },
-    addPlan(plan) {
+    async addPlan(plan) {
         plan.completedUnits = plan.completedUnits || 0;
         plan.status = plan.status || 'active';
-        return this._add(this.TABLES.PLANS, plan);
+        return await this._add(this.TABLES.PLANS, plan);
     },
-    updatePlan(id, updates) { return this._update(this.TABLES.PLANS, id, updates); },
-    deletePlan(id) {
-        this.getPlanProgress(id).forEach(p => this._delete(this.TABLES.PROGRESS, p.id));
-        this.getPlanComments(id).forEach(c => this._delete(this.TABLES.COMMENTS, c.id));
-        return this._delete(this.TABLES.PLANS, id);
+    async updatePlan(id, updates) { return await this._update(this.TABLES.PLANS, id, updates); },
+    async deletePlan(id) {
+        for (const p of this.getPlanProgress(id)) await this._delete(this.TABLES.PROGRESS, p.id);
+        for (const c of this.getPlanComments(id)) await this._delete(this.TABLES.COMMENTS, c.id);
+        return await this._delete(this.TABLES.PLANS, id);
     },
 
     getStudentPlans(studentId) {
@@ -192,13 +227,13 @@ const DataStore = {
     // === PROGRESS ENTRIES ===
     getProgressEntries() { return this._getAll(this.TABLES.PROGRESS); },
 
-    addProgressEntry(entry) {
-        const result = this._add(this.TABLES.PROGRESS, entry);
+    async addProgressEntry(entry) {
+        const result = await this._add(this.TABLES.PROGRESS, entry);
         if (entry.planId) {
             const plan = this.getPlan(entry.planId);
             if (plan) {
                 const newCompleted = Math.min((plan.completedUnits || 0) + (entry.amount || 0), plan.totalUnits);
-                this.updatePlan(entry.planId, { completedUnits: newCompleted });
+                await this.updatePlan(entry.planId, { completedUnits: newCompleted });
             }
         }
         return result;
@@ -218,8 +253,8 @@ const DataStore = {
 
     // === COMMENTS ===
     getComments() { return this._getAll(this.TABLES.COMMENTS); },
-    addComment(comment) { return this._add(this.TABLES.COMMENTS, comment); },
-    deleteComment(id) { return this._delete(this.TABLES.COMMENTS, id); },
+    async addComment(comment) { return await this._add(this.TABLES.COMMENTS, comment); },
+    async deleteComment(id) { return await this._delete(this.TABLES.COMMENTS, id); },
 
     getStudentComments(studentId) {
         return this.getComments()
@@ -292,7 +327,8 @@ const DataStore = {
             { name: '정하은', school: '강남중학교', grade: '중3', className: 'B반', phone: '010-5678-9012', parentPhone: '010-5432-1098', parentName: '정미란', previousGrades: '2학기 중간: 수학88 영어92 국어90 과학85', notes: '고교 입시 대비 중. 전과목 고른 성적.' }
         ];
 
-        const saved = students.map(s => this.addStudent(s));
+        const saved = [];
+        for (const s of students) saved.push(await this.addStudent(s));
 
         const plans = [
             { studentId: saved[0].id, subject: '수학', textbook: '개념원리 수학 2-1', studyMethod: '개념 학습 후 유형별 문제풀이', difficulty: '중', planType: '중간고사', startDate: '2026-03-01', endDate: '2026-04-20', totalUnits: 200, unitLabel: '페이지', completedUnits: 120, status: 'active' },
@@ -310,7 +346,8 @@ const DataStore = {
             { studentId: saved[4].id, subject: '국어', textbook: '비상 국어 3-1 심화', studyMethod: '비문학 독해 + 문학 분석', difficulty: '중', planType: '기말고사', startDate: '2026-03-05', endDate: '2026-05-30', totalUnits: 16, unitLabel: '단원', completedUnits: 5, status: 'active' }
         ];
 
-        const savedPlans = plans.map(p => this.addPlan(p));
+        const savedPlans = [];
+        for (const p of plans) savedPlans.push(await this.addPlan(p));
 
         const comments = [
             { studentId: saved[0].id, planId: savedPlans[0].id, author: '김선생', authorRole: 'teacher', content: '수학 진도가 잘 나가고 있습니다. 중간고사 전에 마무리 가능합니다.' },
@@ -325,7 +362,7 @@ const DataStore = {
             { studentId: saved[1].id, planId: savedPlans[4].id, author: '이서연', authorRole: 'student', content: '문법 파트는 이해했는데 독해가 아직 부족한 것 같아요.' }
         ];
 
-        comments.forEach(c => this.addComment(c));
+        for (const c of comments) await this.addComment(c);
 
         const progressEntries = [
             { planId: savedPlans[0].id, studentId: saved[0].id, date: '2026-03-03', amount: 15, note: '1단원 개념 학습 완료' },
@@ -344,7 +381,7 @@ const DataStore = {
             { planId: savedPlans[6].id, studentId: saved[2].id, date: '2026-03-14', amount: 25, note: '2단원 진행' },
         ];
 
-        progressEntries.forEach(e => this._add(this.TABLES.PROGRESS, e));
+        for (const e of progressEntries) await this._add(this.TABLES.PROGRESS, e);
 
         this._syncEnabled = true;
 
@@ -369,16 +406,16 @@ const DataStore = {
 
     getMessage(id) { return this._getById(this.TABLES.MESSAGES, id); },
 
-    addMessage(msg) {
+    async addMessage(msg) {
         msg.readBy = msg.readBy || {};
         msg.pinned = msg.pinned || false;
-        return this._add(this.TABLES.MESSAGES, msg);
+        return await this._add(this.TABLES.MESSAGES, msg);
     },
 
-    updateMessage(id, updates) { return this._update(this.TABLES.MESSAGES, id, updates); },
-    deleteMessage(id) { return this._delete(this.TABLES.MESSAGES, id); },
+    async updateMessage(id, updates) { return await this._update(this.TABLES.MESSAGES, id, updates); },
+    async deleteMessage(id) { return await this._delete(this.TABLES.MESSAGES, id); },
 
-    toggleReadBy(messageId, reader) {
+    async toggleReadBy(messageId, reader) {
         const msg = this.getMessage(messageId);
         if (!msg) return null;
         const readBy = msg.readBy || {};
@@ -387,7 +424,7 @@ const DataStore = {
         } else {
             readBy[reader] = new Date().toISOString();
         }
-        return this.updateMessage(messageId, { readBy });
+        return await this.updateMessage(messageId, { readBy });
     },
 
     getMessagesForFilter(authorRole, studentId) {
@@ -418,7 +455,7 @@ const DataStore = {
             { author: '원장', authorRole: 'director', studentId: students[3].id, title: '최수아 학부모 상담 결과 공유', content: '최수아 학부모님과 전화 상담을 했습니다. 수학 성적 향상에 만족하고 계시나, 영어 독해 부분을 좀 더 신경 써달라는 요청이 있었습니다. 참고해주세요.', readBy: { '김선생': '2026-03-17T11:00:00.000Z' }, pinned: false }
         ];
 
-        msgs.forEach(m => this.addMessage(m));
+        for (const m of msgs) await this.addMessage(m);
 
         this._syncEnabled = true;
 
@@ -429,21 +466,21 @@ const DataStore = {
     // === GRADES (성적) ===
     getGrades() { return this._getAll(this.TABLES.GRADES); },
     getGrade(id) { return this._getById(this.TABLES.GRADES, id); },
-    addGrade(grade) {
+    async addGrade(grade) {
         if (grade.subjects && grade.subjects.length > 0) {
             const scores = grade.subjects.filter(s => s.score != null && s.score !== '').map(s => Number(s.score));
             grade.totalAvg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10 : 0;
         }
-        return this._add(this.TABLES.GRADES, grade);
+        return await this._add(this.TABLES.GRADES, grade);
     },
-    updateGrade(id, updates) {
+    async updateGrade(id, updates) {
         if (updates.subjects && updates.subjects.length > 0) {
             const scores = updates.subjects.filter(s => s.score != null && s.score !== '').map(s => Number(s.score));
             updates.totalAvg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10 : 0;
         }
-        return this._update(this.TABLES.GRADES, id, updates);
+        return await this._update(this.TABLES.GRADES, id, updates);
     },
-    deleteGrade(id) { return this._delete(this.TABLES.GRADES, id); },
+    async deleteGrade(id) { return await this._delete(this.TABLES.GRADES, id); },
 
     getStudentGrades(studentId) {
         return this.getGrades()
@@ -524,7 +561,7 @@ const DataStore = {
               ] }
         ];
 
-        gradeData.forEach(g => this.addGrade(g));
+        for (const g of gradeData) await this.addGrade(g);
 
         this._syncEnabled = true;
 
@@ -535,8 +572,8 @@ const DataStore = {
     // === TEACHERS / USERS ===
     getTeachers() { return this._getAll(this.TABLES.TEACHERS); },
     getTeacher(id) { return this._getById(this.TABLES.TEACHERS, id); },
-    addTeacher(teacher) { return this._add(this.TABLES.TEACHERS, teacher); },
-    updateTeacher(id, updates) { return this._update(this.TABLES.TEACHERS, id, updates); },
+    async addTeacher(teacher) { return await this._add(this.TABLES.TEACHERS, teacher); },
+    async updateTeacher(id, updates) { return await this._update(this.TABLES.TEACHERS, id, updates); },
 
     getTeacherByLoginId(loginId) {
         return this.getTeachers().find(t => t.loginId === loginId) || null;
@@ -556,16 +593,16 @@ const DataStore = {
         return this.getTeachers().filter(t => t.approved === false);
     },
 
-    approveUser(id) {
-        return this.updateTeacher(id, { approved: true });
+    async approveUser(id) {
+        return await this.updateTeacher(id, { approved: true });
     },
 
-    rejectUser(id) {
+    async rejectUser(id) {
         const user = this.getTeacher(id);
         if (user && user.studentId) {
-            this.deleteStudent(user.studentId);
+            await this.deleteStudent(user.studentId);
         }
-        return this._delete(this.TABLES.TEACHERS, id);
+        return await this._delete(this.TABLES.TEACHERS, id);
     },
 
     logout() {
@@ -600,24 +637,24 @@ const DataStore = {
         return this.getTeachers().filter(t => t.role === 'teacher' && (t.assignedStudentIds || []).includes(studentId));
     },
 
-    assignStudentToTeacher(teacherId, studentId) {
+    async assignStudentToTeacher(teacherId, studentId) {
         const teacher = this.getTeacher(teacherId);
         if (!teacher) return;
         const ids = teacher.assignedStudentIds || [];
         if (!ids.includes(studentId)) {
             ids.push(studentId);
-            this.updateTeacher(teacherId, { assignedStudentIds: ids });
+            await this.updateTeacher(teacherId, { assignedStudentIds: ids });
         }
     },
 
-    unassignStudentFromTeacher(teacherId, studentId) {
+    async unassignStudentFromTeacher(teacherId, studentId) {
         const teacher = this.getTeacher(teacherId);
         if (!teacher) return;
         const ids = (teacher.assignedStudentIds || []).filter(id => id !== studentId);
-        this.updateTeacher(teacherId, { assignedStudentIds: ids });
+        await this.updateTeacher(teacherId, { assignedStudentIds: ids });
     },
 
-    deleteTeacher(id) { return this._delete(this.TABLES.TEACHERS, id); },
+    async deleteTeacher(id) { return await this._delete(this.TABLES.TEACHERS, id); },
 
     async initSampleTeachers() {
         if (this.getTeachers().length > 0) return;
@@ -633,7 +670,7 @@ const DataStore = {
             { loginId: 'leeteacher', password: '1234', name: '이선생', role: 'teacher', assignedStudentIds: [students[2].id, students[4].id] }
         ];
 
-        teachers.forEach(t => this.addTeacher(t));
+        for (const t of teachers) await this.addTeacher(t);
 
         this._syncEnabled = true;
 
