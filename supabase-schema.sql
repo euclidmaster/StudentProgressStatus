@@ -104,6 +104,7 @@ CREATE TABLE grades (
     exam_name TEXT DEFAULT '',
     total_rank TEXT DEFAULT '',
     subjects JSONB DEFAULT '[]',
+    grade_system TEXT DEFAULT '9',
     total_avg REAL DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ

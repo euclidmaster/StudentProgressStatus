@@ -814,7 +814,7 @@ const App = {
                                         if (isMock) {
                                             return `<td><span class="grade-score ${d.score >= 90 ? 'high' : d.score >= 70 ? 'mid' : 'low'}">${d.score}</span> <span class="mock-grade-badge mock-grade-${d.grade}">${d.grade}등급</span>${d.standardScore ? `<br><span style="font-size:0.72rem;color:var(--gray-500)">표${d.standardScore} / 백${d.percentile || ''}</span>` : ''}</td>`;
                                         }
-                                        return `<td><span class="grade-score ${d.score >= 90 ? 'high' : d.score >= 70 ? 'mid' : 'low'}">${d.score}</span> <span class="grade-badge grade-${(d.grade || '')[0]}">${this.escapeHtml(d.grade || '')}</span></td>`;
+                                        return `<td><span class="grade-score ${d.score >= 90 ? 'high' : d.score >= 70 ? 'mid' : 'low'}">${d.score}</span>${d.grade ? ` <span class="grade-badge grade-${d.grade}">${d.grade}등급</span>` : ''}</td>`;
                                     }).join('')}
                                     <td><strong>${g.totalAvg || '-'}</strong></td>
                                     <td style="font-size:0.82rem;color:var(--gray-500)">${this.escapeHtml(g.totalRank || '-')}</td>
@@ -1292,7 +1292,7 @@ const App = {
                     const examLabel = r.isMock ? (r.examName || '모의고사') : `${r.semester} ${r.examType}`;
                     const gradeDisplay = r.isMock
                         ? `<span class="mock-grade-badge mock-grade-${r.grade}">${r.grade}등급</span>`
-                        : `<span class="grade-badge grade-${(r.grade || '')[0]}">${this.escapeHtml(r.grade || '-')}</span>`;
+                        : (r.grade ? `<span class="grade-badge grade-${r.grade}">${r.grade}등급</span>` : '-');
                     return `<tr>
                     <td><span class="student-name" data-action="view-student" data-id="${r.studentId}">${this.escapeHtml(r.studentName)}</span></td>
                     <td>${this.escapeHtml(examLabel)}</td>
@@ -1383,7 +1383,7 @@ const App = {
                                     if (isMock) {
                                         return `<td><span class="grade-score ${d.score >= 90 ? 'high' : d.score >= 70 ? 'mid' : 'low'}">${d.score}</span> <span class="mock-grade-badge mock-grade-${d.grade}">${d.grade}등급</span>${d.standardScore ? `<br><span style="font-size:0.72rem;color:var(--gray-500)">표${d.standardScore} / 백${d.percentile || ''}</span>` : ''}</td>`;
                                     }
-                                    return `<td><span class="grade-score ${d.score >= 90 ? 'high' : d.score >= 70 ? 'mid' : 'low'}">${d.score}</span> <span class="grade-badge grade-${(d.grade || '')[0]}">${this.escapeHtml(d.grade || '')}</span></td>`;
+                                    return `<td><span class="grade-score ${d.score >= 90 ? 'high' : d.score >= 70 ? 'mid' : 'low'}">${d.score}</span>${d.grade ? ` <span class="grade-badge grade-${d.grade}">${d.grade}등급</span>` : ''}</td>`;
                                 }).join('')}
                                 <td>${trend}</td>
                             </tr>`;
@@ -1469,11 +1469,17 @@ const App = {
             { subject: '국어', score: '', grade: '', rank: '', standardScore: '', percentile: '' }
         ];
 
-        const internalGradeOptions = ['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-','F'];
-        const mockGradeOptions = ['1','2','3','4','5','6','7','8','9'];
+        const gradeOptions9 = ['1','2','3','4','5','6','7','8','9'];
+        const gradeOptions5 = ['1','2','3','4','5'];
+        const currentGradeSystem = isEdit && gradeObj.gradeSystem ? gradeObj.gradeSystem : '9';
 
-        const buildMatrixRow = (s, i, mock) => {
-            const gradeOpts = mock ? mockGradeOptions : internalGradeOptions;
+        const getGradeOpts = (mock, system) => {
+            if (mock) return gradeOptions9;
+            return system === '5' ? gradeOptions5 : gradeOptions9;
+        };
+
+        const buildMatrixRow = (s, i, mock, gradeSystem) => {
+            const gradeOpts = getGradeOpts(mock, gradeSystem);
             if (mock) {
                 return `<div class="grade-matrix-row mock" data-idx="${i}">
                     <input type="text" class="form-control" name="sub_name_${i}" value="${this.escapeHtml(s.subject)}" placeholder="과목명" list="subject-list-g">
@@ -1492,7 +1498,7 @@ const App = {
                 <input type="number" class="form-control" name="sub_score_${i}" value="${s.score !== '' && s.score != null ? s.score : ''}" placeholder="원점수" min="0" max="100">
                 <select class="form-control" name="sub_grade_${i}">
                     <option value="">등급</option>
-                    ${gradeOpts.map(g => `<option value="${g}" ${s.grade === g ? 'selected' : ''}>${g}</option>`).join('')}
+                    ${gradeOpts.map(g => `<option value="${g}" ${String(s.grade) === g ? 'selected' : ''}>${g}등급</option>`).join('')}
                 </select>
                 <input type="text" class="form-control" name="sub_rank_${i}" value="${this.escapeHtml(s.rank || '')}" placeholder="석차">
                 <button type="button" class="btn-icon grade-remove-row" title="삭제"><i class="fas fa-times"></i></button>
@@ -1542,7 +1548,16 @@ const App = {
 
                 <div class="grade-matrix-header">
                     <h3><i class="fas fa-th"></i> 과목별 성적</h3>
-                    <button type="button" class="btn btn-sm btn-outline" id="btn-add-subject-row"><i class="fas fa-plus"></i> 과목 추가</button>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <div id="grade-system-group" ${isMock ? 'style="display:none"' : 'style="display:flex;align-items:center;gap:6px"'}>
+                            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-600);white-space:nowrap">등급제</label>
+                            <select class="form-control" name="gradeSystem" id="grade-system-select" style="width:auto;padding:5px 10px;font-size:0.82rem">
+                                <option value="9" ${currentGradeSystem === '9' ? 'selected' : ''}>9등급제</option>
+                                <option value="5" ${currentGradeSystem === '5' ? 'selected' : ''}>5등급제</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline" id="btn-add-subject-row"><i class="fas fa-plus"></i> 과목 추가</button>
+                    </div>
                 </div>
                 <div class="grade-matrix" id="grade-matrix">
                     <div class="grade-matrix-labels ${isMock ? 'mock' : ''}" id="grade-matrix-labels">
@@ -1550,7 +1565,7 @@ const App = {
                             ? '<span>과목</span><span>원점수</span><span>등급</span><span>표준점수</span><span>백분위</span><span></span>'
                             : '<span>과목</span><span>원점수</span><span>등급</span><span>석차</span><span></span>'}
                     </div>
-                    ${existingSubjects.map((s, i) => buildMatrixRow(s, i, isMock)).join('')}
+                    ${existingSubjects.map((s, i) => buildMatrixRow(s, i, isMock, currentGradeSystem)).join('')}
                 </div>
                 <datalist id="subject-list-g">
                     <option value="수학"><option value="영어"><option value="국어"><option value="과학"><option value="사회"><option value="한국사"><option value="물리"><option value="화학"><option value="생물"><option value="지구과학">
@@ -1571,11 +1586,14 @@ const App = {
 
         // Dynamic exam type toggle
         const examTypeSelect = document.getElementById('grade-exam-type');
+        const gradeSystemSelect = document.getElementById('grade-system-select');
         const rebuildMatrix = () => {
             const mock = examTypeSelect.value === '모의고사';
+            const gradeSystem = gradeSystemSelect.value;
             document.getElementById('grade-semester-group').style.display = mock ? 'none' : '';
             document.getElementById('grade-examname-group').style.display = mock ? '' : 'none';
             document.getElementById('grade-rank-group').style.display = mock ? 'none' : '';
+            document.getElementById('grade-system-group').style.display = mock ? 'none' : 'flex';
 
             // Rebuild matrix labels
             const labels = document.getElementById('grade-matrix-labels');
@@ -1598,19 +1616,21 @@ const App = {
                 const pct = form[`sub_pct_${idx}`]?.value || '';
                 const s = { subject: name, score, grade, rank, standardScore: std, percentile: pct };
                 const newRow = document.createElement('div');
-                newRow.innerHTML = self.buildGradeMatrixRowHtml(s, idx, mock);
+                newRow.innerHTML = self.buildGradeMatrixRowHtml(s, idx, mock, gradeSystem);
                 row.replaceWith(newRow.firstElementChild);
             });
         };
         examTypeSelect.addEventListener('change', rebuildMatrix);
+        gradeSystemSelect.addEventListener('change', rebuildMatrix);
 
         // Add subject row
         document.getElementById('btn-add-subject-row').addEventListener('click', () => {
             const matrix = document.getElementById('grade-matrix');
             const mock = examTypeSelect.value === '모의고사';
+            const gradeSystem = gradeSystemSelect.value;
             const s = { subject: '', score: '', grade: '', rank: '', standardScore: '', percentile: '' };
             const div = document.createElement('div');
-            div.innerHTML = self.buildGradeMatrixRowHtml(s, rowIdx, mock);
+            div.innerHTML = self.buildGradeMatrixRowHtml(s, rowIdx, mock, gradeSystem);
             matrix.appendChild(div.firstElementChild);
             rowIdx++;
         });
@@ -1652,6 +1672,7 @@ const App = {
                 examDate: form.examDate.value,
                 examName: mock ? (form.examName.value.trim() || '') : '',
                 totalRank: mock ? '' : form.totalRank.value.trim(),
+                gradeSystem: mock ? '9' : gradeSystemSelect.value,
                 subjects
             };
 
@@ -1670,10 +1691,10 @@ const App = {
         });
     },
 
-    buildGradeMatrixRowHtml(s, idx, mock) {
-        const internalGradeOptions = ['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-','F'];
-        const mockGradeOptions = ['1','2','3','4','5','6','7','8','9'];
-        const gradeOpts = mock ? mockGradeOptions : internalGradeOptions;
+    buildGradeMatrixRowHtml(s, idx, mock, gradeSystem) {
+        const gradeOptions9 = ['1','2','3','4','5','6','7','8','9'];
+        const gradeOptions5 = ['1','2','3','4','5'];
+        const gradeOpts = mock ? gradeOptions9 : (gradeSystem === '5' ? gradeOptions5 : gradeOptions9);
         if (mock) {
             return `<div class="grade-matrix-row mock" data-idx="${idx}">
                 <input type="text" class="form-control" name="sub_name_${idx}" value="${this.escapeHtml(s.subject)}" placeholder="과목명" list="subject-list-g">
@@ -1692,7 +1713,7 @@ const App = {
             <input type="number" class="form-control" name="sub_score_${idx}" value="${s.score !== '' && s.score != null ? s.score : ''}" placeholder="원점수" min="0" max="100">
             <select class="form-control" name="sub_grade_${idx}">
                 <option value="">등급</option>
-                ${gradeOpts.map(g => `<option value="${g}" ${s.grade === g ? 'selected' : ''}>${g}</option>`).join('')}
+                ${gradeOpts.map(g => `<option value="${g}" ${String(s.grade) === g ? 'selected' : ''}>${g}등급</option>`).join('')}
             </select>
             <input type="text" class="form-control" name="sub_rank_${idx}" value="${this.escapeHtml(s.rank || '')}" placeholder="석차">
             <button type="button" class="btn-icon grade-remove-row" title="삭제"><i class="fas fa-times"></i></button>
