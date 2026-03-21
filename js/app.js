@@ -751,15 +751,17 @@ const App = {
                     ${plans.length === 0 ? '<div class="empty-state"><i class="fas fa-book"></i><h3>등록된 학습 계획이 없습니다</h3><p>학습 계획을 추가해주세요.</p></div>' :
                         plans.map(plan => {
                             const pct = plan.totalUnits > 0 ? Math.round((plan.completedUnits / plan.totalUnits) * 100) : 0;
+                            const isChecklist = plan.trackingMode === 'checklist';
                             return `<div class="plan-card">
                                 <div class="plan-card-header">
                                     <div class="plan-card-title">
                                         <h3>${this.escapeHtml(plan.subject)}</h3>
                                         ${this.getStatusBadge(plan.status)}
                                         ${this.getDifficultyBadge(plan.difficulty)}
+                                        ${isChecklist ? '<span class="badge badge-info" style="font-size:0.68rem"><i class="fas fa-tasks"></i> 단원별</span>' : ''}
                                     </div>
                                     <div class="plan-card-actions">
-                                        <button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-plus"></i> 진도 입력</button>
+                                        ${!isChecklist ? `<button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-plus"></i> 진도 입력</button>` : ''}
                                         <button class="btn btn-sm btn-outline" data-action="edit-plan" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-edit"></i></button>
                                         <button class="btn btn-sm btn-ghost" data-action="delete-plan" data-plan-id="${plan.id}" data-student-id="${studentId}" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
                                     </div>
@@ -779,7 +781,17 @@ const App = {
                                         <div class="progress-bar ${this.getProgressColor(pct)}" style="width:${pct}%"></div>
                                     </div>
                                 </div>
-                                ${this.renderPlanTimeline(plan)}
+                                ${isChecklist && plan.checklistItems ? `
+                                    <div class="checklist-display">
+                                        ${plan.checklistItems.map((item, ci) => `
+                                            <label class="checklist-item ${item.completed ? 'completed' : ''}" data-plan-id="${plan.id}" data-ci="${ci}">
+                                                <input type="checkbox" ${item.completed ? 'checked' : ''} data-action="toggle-checklist" data-plan-id="${plan.id}" data-ci="${ci}">
+                                                <span>${this.escapeHtml(item.name)}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                                ${!isChecklist ? this.renderPlanTimeline(plan) : ''}
                             </div>`;
                         }).join('')}
                 </div>
@@ -923,15 +935,17 @@ const App = {
         return plans.map(plan => {
             const student = DataStore.getStudent(plan.studentId);
             const pct = plan.totalUnits > 0 ? Math.round((plan.completedUnits / plan.totalUnits) * 100) : 0;
+            const isChecklist = plan.trackingMode === 'checklist';
             return `<div class="plan-card">
                 <div class="plan-card-header">
                     <div class="plan-card-title">
                         <h3>${this.escapeHtml(plan.subject)}</h3>
                         ${this.getStatusBadge(plan.status)}
                         ${this.getDifficultyBadge(plan.difficulty)}
+                        ${isChecklist ? '<span class="badge badge-info" style="font-size:0.68rem"><i class="fas fa-tasks"></i> 단원별</span>' : ''}
                     </div>
                     <div class="plan-card-actions">
-                        <button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${plan.studentId}"><i class="fas fa-plus"></i> 진도</button>
+                        ${!isChecklist ? `<button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${plan.studentId}"><i class="fas fa-plus"></i> 진도</button>` : ''}
                         <button class="btn btn-sm btn-outline" data-action="edit-plan" data-plan-id="${plan.id}" data-student-id="${plan.studentId}"><i class="fas fa-edit"></i></button>
                     </div>
                 </div>
@@ -950,6 +964,16 @@ const App = {
                         <div class="progress-bar ${this.getProgressColor(pct)}" style="width:${pct}%"></div>
                     </div>
                 </div>
+                ${isChecklist && plan.checklistItems ? `
+                    <div class="checklist-display">
+                        ${plan.checklistItems.map((item, ci) => `
+                            <label class="checklist-item ${item.completed ? 'completed' : ''}" data-plan-id="${plan.id}" data-ci="${ci}">
+                                <input type="checkbox" ${item.completed ? 'checked' : ''} data-action="toggle-checklist" data-plan-id="${plan.id}" data-ci="${ci}">
+                                <span>${this.escapeHtml(item.name)}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                ` : ''}
             </div>`;
         }).join('');
     },
@@ -1839,6 +1863,8 @@ const App = {
 
     showPlanForm(studentId, plan = null) {
         const isEdit = !!plan;
+        const currentMode = isEdit && plan.trackingMode === 'checklist' ? 'checklist' : 'numeric';
+        const existingChecklist = isEdit && plan.checklistItems ? plan.checklistItems : [];
         const html = `
             <form id="plan-form">
                 <div class="form-row">
@@ -1892,23 +1918,55 @@ const App = {
                         <input type="date" class="form-control" name="endDate" required value="${isEdit ? plan.endDate : new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]}">
                     </div>
                 </div>
-                <div class="form-row-3">
-                    <div class="form-group">
-                        <label>주간 학습량 <span class="required">*</span></label>
-                        <input type="number" class="form-control" name="totalUnits" required min="1" value="${isEdit ? plan.totalUnits : ''}" placeholder="이번 주 목표 분량">
-                    </div>
-                    <div class="form-group">
-                        <label>단위</label>
-                        <input type="text" class="form-control" name="unitLabel" value="${isEdit ? this.escapeHtml(plan.unitLabel) : '페이지'}" placeholder="예: 페이지, 단원" list="unit-list">
-                        <datalist id="unit-list">
-                            <option value="페이지"><option value="단원"><option value="챕터"><option value="문제"><option value="세트"><option value="지문">
-                        </datalist>
-                    </div>
-                    <div class="form-group">
-                        <label>현재 진행량</label>
-                        <input type="number" class="form-control" name="completedUnits" min="0" value="${isEdit ? plan.completedUnits : 0}">
+
+                <div class="tracking-mode-tabs">
+                    <button type="button" class="tracking-tab ${currentMode === 'numeric' ? 'active' : ''}" data-mode="numeric"><i class="fas fa-hashtag"></i> 숫자 입력</button>
+                    <button type="button" class="tracking-tab ${currentMode === 'checklist' ? 'active' : ''}" data-mode="checklist"><i class="fas fa-tasks"></i> 단원별 체크</button>
+                </div>
+                <input type="hidden" name="trackingMode" value="${currentMode}">
+
+                <div id="tracking-numeric" style="${currentMode === 'numeric' ? '' : 'display:none'}">
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label>주간 학습량 <span class="required">*</span></label>
+                            <input type="number" class="form-control" name="totalUnits" min="1" value="${isEdit ? plan.totalUnits : ''}" placeholder="이번 주 목표 분량">
+                        </div>
+                        <div class="form-group">
+                            <label>단위</label>
+                            <input type="text" class="form-control" name="unitLabel" value="${isEdit ? this.escapeHtml(plan.unitLabel) : '페이지'}" placeholder="예: 페이지, 단원" list="unit-list">
+                            <datalist id="unit-list">
+                                <option value="페이지"><option value="단원"><option value="챕터"><option value="문제"><option value="세트"><option value="지문">
+                            </datalist>
+                        </div>
+                        <div class="form-group">
+                            <label>현재 진행량</label>
+                            <input type="number" class="form-control" name="completedUnits" min="0" value="${isEdit ? plan.completedUnits : 0}">
+                        </div>
                     </div>
                 </div>
+
+                <div id="tracking-checklist" style="${currentMode === 'checklist' ? '' : 'display:none'}">
+                    <div class="form-group">
+                        <label>단원 추가</label>
+                        <div style="display:flex;gap:8px">
+                            <input type="text" class="form-control" id="checklist-new-item" placeholder="예: 지수, 로그, 삼각함수 (쉼표로 구분)">
+                            <button type="button" class="btn btn-sm btn-outline" id="btn-add-checklist"><i class="fas fa-plus"></i> 추가</button>
+                        </div>
+                    </div>
+                    <div id="checklist-items">
+                        ${existingChecklist.map((item, i) => `
+                            <div class="checklist-form-item" data-idx="${i}">
+                                <label class="checklist-label">
+                                    <input type="checkbox" ${item.completed ? 'checked' : ''}>
+                                    <span>${this.escapeHtml(item.name)}</span>
+                                </label>
+                                <button type="button" class="btn-icon checklist-remove" title="삭제"><i class="fas fa-times"></i></button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${existingChecklist.length === 0 ? '' : ''}
+                </div>
+
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="App.closeModal()">취소</button>
                     <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> ${isEdit ? '수정' : '추가'}</button>
@@ -1918,9 +1976,64 @@ const App = {
 
         this.openModal(isEdit ? '학습 계획 수정' : '학습 계획 추가', html);
 
+        // Tab switching
+        document.querySelectorAll('.tracking-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const mode = tab.dataset.mode;
+                document.querySelectorAll('.tracking-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.querySelector('[name="trackingMode"]').value = mode;
+                document.getElementById('tracking-numeric').style.display = mode === 'numeric' ? '' : 'none';
+                document.getElementById('tracking-checklist').style.display = mode === 'checklist' ? '' : 'none';
+            });
+        });
+
+        // Add checklist items
+        const addChecklistItems = (text) => {
+            const container = document.getElementById('checklist-items');
+            const items = text.split(',').map(s => s.trim()).filter(Boolean);
+            items.forEach(name => {
+                const idx = container.children.length;
+                const div = document.createElement('div');
+                div.className = 'checklist-form-item';
+                div.dataset.idx = idx;
+                div.innerHTML = `
+                    <label class="checklist-label">
+                        <input type="checkbox">
+                        <span>${this.escapeHtml(name)}</span>
+                    </label>
+                    <button type="button" class="btn-icon checklist-remove" title="삭제"><i class="fas fa-times"></i></button>
+                `;
+                container.appendChild(div);
+            });
+        };
+
+        document.getElementById('btn-add-checklist').addEventListener('click', () => {
+            const input = document.getElementById('checklist-new-item');
+            if (input.value.trim()) {
+                addChecklistItems(input.value);
+                input.value = '';
+                input.focus();
+            }
+        });
+        document.getElementById('checklist-new-item').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('btn-add-checklist').click();
+            }
+        });
+
+        // Remove checklist item
+        document.getElementById('checklist-items').addEventListener('click', (e) => {
+            const btn = e.target.closest('.checklist-remove');
+            if (btn) btn.closest('.checklist-form-item').remove();
+        });
+
         document.getElementById('plan-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
+            const trackingMode = form.trackingMode.value;
+
             const data = {
                 studentId,
                 subject: form.subject.value.trim(),
@@ -1931,10 +2044,34 @@ const App = {
                 status: form.status.value,
                 startDate: form.startDate.value,
                 endDate: form.endDate.value,
-                totalUnits: parseInt(form.totalUnits.value),
-                unitLabel: form.unitLabel.value.trim() || '단위',
-                completedUnits: parseInt(form.completedUnits.value) || 0
+                trackingMode
             };
+
+            if (trackingMode === 'checklist') {
+                const items = [];
+                document.querySelectorAll('#checklist-items .checklist-form-item').forEach(el => {
+                    const name = el.querySelector('.checklist-label span').textContent;
+                    const completed = el.querySelector('input[type="checkbox"]').checked;
+                    items.push({ name, completed });
+                });
+                if (items.length === 0) {
+                    this.toast('단원을 하나 이상 추가해주세요.', 'error');
+                    return;
+                }
+                data.checklistItems = items;
+                data.totalUnits = items.length;
+                data.completedUnits = items.filter(i => i.completed).length;
+                data.unitLabel = '단원';
+            } else {
+                data.totalUnits = parseInt(form.totalUnits.value);
+                data.unitLabel = form.unitLabel.value.trim() || '단위';
+                data.completedUnits = parseInt(form.completedUnits.value) || 0;
+                data.checklistItems = null;
+                if (!data.totalUnits || data.totalUnits < 1) {
+                    this.toast('주간 학습량을 입력해주세요.', 'error');
+                    return;
+                }
+            }
 
             try {
                 if (isEdit) {
@@ -2096,6 +2233,23 @@ const App = {
             try { await DataStore.toggleReadBy(msgId, reader); } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
             this.renderMessages();
             this.updateUnreadBadge();
+            return;
+        }
+
+        // Checklist item toggle
+        if (e.target.tagName === 'INPUT' && e.target.dataset.action === 'toggle-checklist') {
+            const planId = e.target.dataset.planId;
+            const ci = parseInt(e.target.dataset.ci);
+            const plan = DataStore.getPlan(planId);
+            if (plan && plan.checklistItems) {
+                plan.checklistItems[ci].completed = e.target.checked;
+                const completed = plan.checklistItems.filter(i => i.completed).length;
+                try {
+                    await DataStore.updatePlan(planId, { checklistItems: plan.checklistItems, completedUnits: completed });
+                    if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+                    else this.navigate(this.currentView);
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+            }
             return;
         }
 
