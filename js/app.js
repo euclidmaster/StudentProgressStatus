@@ -1504,7 +1504,7 @@ const App = {
                 </select>
                 <select class="form-control" name="sub_achv_${i}">
                     <option value="">성취도</option>
-                    ${['A','B','C','D','E'].map(a => `<option value="${a}" ${s.achievement === a ? 'selected' : ''}>${a}</option>`).join('')}
+                    ${['A','B','C'].map(a => `<option value="${a}" ${s.achievement === a ? 'selected' : ''}>${a}</option>`).join('')}
                 </select>
                 <div class="rank-input-group">
                     <input type="number" class="form-control" name="sub_rank_${i}" value="${(() => { const p = (s.rank || '').split('/'); return p[0] ? p[0].trim() : ''; })()}" placeholder="석차" min="1">
@@ -1733,7 +1733,7 @@ const App = {
             </select>
             <select class="form-control" name="sub_achv_${idx}">
                 <option value="">성취도</option>
-                ${['A','B','C','D','E'].map(a => `<option value="${a}" ${s.achievement === a ? 'selected' : ''}>${a}</option>`).join('')}
+                ${['A','B','C'].map(a => `<option value="${a}" ${s.achievement === a ? 'selected' : ''}>${a}</option>`).join('')}
             </select>
             <div class="rank-input-group">
                 <input type="number" class="form-control" name="sub_rank_${idx}" value="${(() => { const p = (s.rank || '').split('/'); return p[0] ? p[0].trim() : ''; })()}" placeholder="석차" min="1">
