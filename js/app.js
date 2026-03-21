@@ -1500,7 +1500,11 @@ const App = {
                     <option value="">등급</option>
                     ${gradeOpts.map(g => `<option value="${g}" ${String(s.grade) === g ? 'selected' : ''}>${g}등급</option>`).join('')}
                 </select>
-                <input type="text" class="form-control" name="sub_rank_${i}" value="${this.escapeHtml(s.rank || '')}" placeholder="석차">
+                <div class="rank-input-group">
+                    <input type="number" class="form-control" name="sub_rank_${i}" value="${(() => { const p = (s.rank || '').split('/'); return p[0] ? p[0].trim() : ''; })()}" placeholder="석차" min="1">
+                    <span>/</span>
+                    <input type="number" class="form-control" name="sub_total_${i}" value="${(() => { const p = (s.rank || '').split('/'); return p[1] ? p[1].trim() : ''; })()}" placeholder="전체" min="1">
+                </div>
                 <button type="button" class="btn-icon grade-remove-row" title="삭제"><i class="fas fa-times"></i></button>
             </div>`;
         };
@@ -1563,7 +1567,7 @@ const App = {
                     <div class="grade-matrix-labels ${isMock ? 'mock' : ''}" id="grade-matrix-labels">
                         ${isMock
                             ? '<span>과목</span><span>원점수</span><span>등급</span><span>표준점수</span><span>백분위</span><span></span>'
-                            : '<span>과목</span><span>원점수</span><span>등급</span><span>석차</span><span></span>'}
+                            : '<span>과목</span><span>원점수</span><span>등급</span><span>석차/전체</span><span></span>'}
                     </div>
                     ${existingSubjects.map((s, i) => buildMatrixRow(s, i, isMock, currentGradeSystem)).join('')}
                 </div>
@@ -1600,7 +1604,7 @@ const App = {
             labels.className = 'grade-matrix-labels' + (mock ? ' mock' : '');
             labels.innerHTML = mock
                 ? '<span>과목</span><span>원점수</span><span>등급</span><span>표준점수</span><span>백분위</span><span></span>'
-                : '<span>과목</span><span>원점수</span><span>등급</span><span>석차</span><span></span>';
+                : '<span>과목</span><span>원점수</span><span>등급</span><span>석차/전체</span><span></span>';
 
             // Rebuild existing rows preserving values
             const matrix = document.getElementById('grade-matrix');
@@ -1611,7 +1615,9 @@ const App = {
                 const name = form[`sub_name_${idx}`]?.value || '';
                 const score = form[`sub_score_${idx}`]?.value || '';
                 const grade = form[`sub_grade_${idx}`]?.value || '';
-                const rank = form[`sub_rank_${idx}`]?.value || '';
+                const rankVal = form[`sub_rank_${idx}`]?.value || '';
+                const totalVal = form[`sub_total_${idx}`]?.value || '';
+                const rank = rankVal && totalVal ? `${rankVal}/${totalVal}` : rankVal || '';
                 const std = form[`sub_std_${idx}`]?.value || '';
                 const pct = form[`sub_pct_${idx}`]?.value || '';
                 const s = { subject: name, score, grade, rank, standardScore: std, percentile: pct };
@@ -1659,7 +1665,9 @@ const App = {
                         sub.standardScore = form[`sub_std_${idx}`]?.value ? Number(form[`sub_std_${idx}`].value) : null;
                         sub.percentile = form[`sub_pct_${idx}`]?.value ? Number(form[`sub_pct_${idx}`].value) : null;
                     } else {
-                        sub.rank = form[`sub_rank_${idx}`]?.value?.trim() || '';
+                        const rv = form[`sub_rank_${idx}`]?.value?.trim() || '';
+                        const tv = form[`sub_total_${idx}`]?.value?.trim() || '';
+                        sub.rank = rv && tv ? `${rv}/${tv}` : rv || '';
                     }
                     subjects.push(sub);
                 }
@@ -1715,7 +1723,11 @@ const App = {
                 <option value="">등급</option>
                 ${gradeOpts.map(g => `<option value="${g}" ${String(s.grade) === g ? 'selected' : ''}>${g}등급</option>`).join('')}
             </select>
-            <input type="text" class="form-control" name="sub_rank_${idx}" value="${this.escapeHtml(s.rank || '')}" placeholder="석차">
+            <div class="rank-input-group">
+                <input type="number" class="form-control" name="sub_rank_${idx}" value="${(() => { const p = (s.rank || '').split('/'); return p[0] ? p[0].trim() : ''; })()}" placeholder="석차" min="1">
+                <span>/</span>
+                <input type="number" class="form-control" name="sub_total_${idx}" value="${(() => { const p = (s.rank || '').split('/'); return p[1] ? p[1].trim() : ''; })()}" placeholder="전체" min="1">
+            </div>
             <button type="button" class="btn-icon grade-remove-row" title="삭제"><i class="fas fa-times"></i></button>
         </div>`;
     },

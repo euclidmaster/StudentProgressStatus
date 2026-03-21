@@ -1567,7 +1567,7 @@ textarea.form-control {
 
 .grade-matrix-labels {
     display: grid;
-    grid-template-columns: 1fr 80px 80px 100px 32px;
+    grid-template-columns: 1fr 80px 80px 140px 32px;
     gap: 8px;
     margin-bottom: 6px;
     font-size: 0.78rem;
@@ -1578,7 +1578,7 @@ textarea.form-control {
 
 .grade-matrix-row {
     display: grid;
-    grid-template-columns: 1fr 80px 80px 100px 32px;
+    grid-template-columns: 1fr 80px 80px 140px 32px;
     gap: 8px;
     margin-bottom: 6px;
     align-items: center;
@@ -1587,6 +1587,21 @@ textarea.form-control {
 .grade-matrix-row .form-control {
     padding: 8px 10px;
     font-size: 0.85rem;
+}
+
+.rank-input-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.rank-input-group input {
+    width: 50%;
+    min-width: 0;
+}
+.rank-input-group span {
+    color: var(--gray-400);
+    font-weight: 600;
+    flex-shrink: 0;
 }
 
 .grade-remove-row {
