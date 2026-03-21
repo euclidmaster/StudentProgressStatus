@@ -1243,7 +1243,7 @@ const App = {
                     semester: g.semester || '', examType: g.examType, examDate: g.examDate,
                     examName: g.examName || '', isMock,
                     subject: s.subject, score: s.score, grade: s.grade,
-                    rank: s.rank || '-',
+                    rank: s.rank || '-', achievement: s.achievement || '',
                     standardScore: s.standardScore || '', percentile: s.percentile || '',
                     totalAvg: g.totalAvg || 0, totalRank: g.totalRank || '-'
                 });
@@ -1281,6 +1281,7 @@ const App = {
                     <th class="sortable" data-action="sort-grades" data-col="subject">과목 ${sortIcon('subject')}</th>
                     <th class="sortable" data-action="sort-grades" data-col="score">원점수 ${sortIcon('score')}</th>
                     <th class="sortable" data-action="sort-grades" data-col="grade">등급 ${sortIcon('grade')}</th>
+                    <th>성취도</th>
                     <th>석차</th>
                     ${hasMock ? `<th class="sortable" data-action="sort-grades" data-col="standardScore">표준점수 ${sortIcon('standardScore')}</th>
                     <th class="sortable" data-action="sort-grades" data-col="percentile">백분위 ${sortIcon('percentile')}</th>` : ''}
@@ -1299,6 +1300,7 @@ const App = {
                     <td><strong>${this.escapeHtml(r.subject)}</strong></td>
                     <td><span class="grade-score ${r.score >= 90 ? 'high' : r.score >= 70 ? 'mid' : 'low'}">${r.score}</span></td>
                     <td>${gradeDisplay}</td>
+                    <td style="font-size:0.85rem;font-weight:600">${r.isMock ? '-' : (r.achievement || '-')}</td>
                     <td style="color:var(--gray-500);font-size:0.82rem">${r.isMock ? '-' : this.escapeHtml(r.rank)}</td>
                     ${hasMock ? `<td style="color:var(--gray-600);font-size:0.85rem">${r.isMock && r.standardScore ? r.standardScore : '-'}</td>
                     <td style="color:var(--gray-600);font-size:0.85rem">${r.isMock && r.percentile ? r.percentile : '-'}</td>` : ''}
@@ -1464,9 +1466,9 @@ const App = {
         const students = this.getVisibleStudents();
         const isMock = isEdit && gradeObj.examType === '모의고사';
         const existingSubjects = isEdit && gradeObj.subjects ? gradeObj.subjects : [
-            { subject: '수학', score: '', grade: '', rank: '', standardScore: '', percentile: '' },
-            { subject: '영어', score: '', grade: '', rank: '', standardScore: '', percentile: '' },
-            { subject: '국어', score: '', grade: '', rank: '', standardScore: '', percentile: '' }
+            { subject: '수학', score: '', grade: '', achievement: '', rank: '', standardScore: '', percentile: '' },
+            { subject: '영어', score: '', grade: '', achievement: '', rank: '', standardScore: '', percentile: '' },
+            { subject: '국어', score: '', grade: '', achievement: '', rank: '', standardScore: '', percentile: '' }
         ];
 
         const gradeOptions9 = ['1','2','3','4','5','6','7','8','9'];
@@ -1499,6 +1501,10 @@ const App = {
                 <select class="form-control" name="sub_grade_${i}">
                     <option value="">등급</option>
                     ${gradeOpts.map(g => `<option value="${g}" ${String(s.grade) === g ? 'selected' : ''}>${g}등급</option>`).join('')}
+                </select>
+                <select class="form-control" name="sub_achv_${i}">
+                    <option value="">성취도</option>
+                    ${['A','B','C','D','E'].map(a => `<option value="${a}" ${s.achievement === a ? 'selected' : ''}>${a}</option>`).join('')}
                 </select>
                 <div class="rank-input-group">
                     <input type="number" class="form-control" name="sub_rank_${i}" value="${(() => { const p = (s.rank || '').split('/'); return p[0] ? p[0].trim() : ''; })()}" placeholder="석차" min="1">
@@ -1567,7 +1573,7 @@ const App = {
                     <div class="grade-matrix-labels ${isMock ? 'mock' : ''}" id="grade-matrix-labels">
                         ${isMock
                             ? '<span>과목</span><span>원점수</span><span>등급</span><span>표준점수</span><span>백분위</span><span></span>'
-                            : '<span>과목</span><span>원점수</span><span>등급</span><span>석차/전체</span><span></span>'}
+                            : '<span>과목</span><span>원점수</span><span>등급</span><span>성취도</span><span>석차/전체</span><span></span>'}
                     </div>
                     ${existingSubjects.map((s, i) => buildMatrixRow(s, i, isMock, currentGradeSystem)).join('')}
                 </div>
@@ -1604,7 +1610,7 @@ const App = {
             labels.className = 'grade-matrix-labels' + (mock ? ' mock' : '');
             labels.innerHTML = mock
                 ? '<span>과목</span><span>원점수</span><span>등급</span><span>표준점수</span><span>백분위</span><span></span>'
-                : '<span>과목</span><span>원점수</span><span>등급</span><span>석차/전체</span><span></span>';
+                : '<span>과목</span><span>원점수</span><span>등급</span><span>성취도</span><span>석차/전체</span><span></span>';
 
             // Rebuild existing rows preserving values
             const matrix = document.getElementById('grade-matrix');
@@ -1615,12 +1621,13 @@ const App = {
                 const name = form[`sub_name_${idx}`]?.value || '';
                 const score = form[`sub_score_${idx}`]?.value || '';
                 const grade = form[`sub_grade_${idx}`]?.value || '';
+                const achv = form[`sub_achv_${idx}`]?.value || '';
                 const rankVal = form[`sub_rank_${idx}`]?.value || '';
                 const totalVal = form[`sub_total_${idx}`]?.value || '';
                 const rank = rankVal && totalVal ? `${rankVal}/${totalVal}` : rankVal || '';
                 const std = form[`sub_std_${idx}`]?.value || '';
                 const pct = form[`sub_pct_${idx}`]?.value || '';
-                const s = { subject: name, score, grade, rank, standardScore: std, percentile: pct };
+                const s = { subject: name, score, grade, achievement: achv, rank, standardScore: std, percentile: pct };
                 const newRow = document.createElement('div');
                 newRow.innerHTML = self.buildGradeMatrixRowHtml(s, idx, mock, gradeSystem);
                 row.replaceWith(newRow.firstElementChild);
@@ -1634,7 +1641,7 @@ const App = {
             const matrix = document.getElementById('grade-matrix');
             const mock = examTypeSelect.value === '모의고사';
             const gradeSystem = gradeSystemSelect.value;
-            const s = { subject: '', score: '', grade: '', rank: '', standardScore: '', percentile: '' };
+            const s = { subject: '', score: '', grade: '', achievement: '', rank: '', standardScore: '', percentile: '' };
             const div = document.createElement('div');
             div.innerHTML = self.buildGradeMatrixRowHtml(s, rowIdx, mock, gradeSystem);
             matrix.appendChild(div.firstElementChild);
@@ -1665,6 +1672,7 @@ const App = {
                         sub.standardScore = form[`sub_std_${idx}`]?.value ? Number(form[`sub_std_${idx}`].value) : null;
                         sub.percentile = form[`sub_pct_${idx}`]?.value ? Number(form[`sub_pct_${idx}`].value) : null;
                     } else {
+                        sub.achievement = form[`sub_achv_${idx}`]?.value || '';
                         const rv = form[`sub_rank_${idx}`]?.value?.trim() || '';
                         const tv = form[`sub_total_${idx}`]?.value?.trim() || '';
                         sub.rank = rv && tv ? `${rv}/${tv}` : rv || '';
@@ -1722,6 +1730,10 @@ const App = {
             <select class="form-control" name="sub_grade_${idx}">
                 <option value="">등급</option>
                 ${gradeOpts.map(g => `<option value="${g}" ${String(s.grade) === g ? 'selected' : ''}>${g}등급</option>`).join('')}
+            </select>
+            <select class="form-control" name="sub_achv_${idx}">
+                <option value="">성취도</option>
+                ${['A','B','C','D','E'].map(a => `<option value="${a}" ${s.achievement === a ? 'selected' : ''}>${a}</option>`).join('')}
             </select>
             <div class="rank-input-group">
                 <input type="number" class="form-control" name="sub_rank_${idx}" value="${(() => { const p = (s.rank || '').split('/'); return p[0] ? p[0].trim() : ''; })()}" placeholder="석차" min="1">

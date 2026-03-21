@@ -1567,7 +1567,7 @@ textarea.form-control {
 
 .grade-matrix-labels {
     display: grid;
-    grid-template-columns: 1fr 80px 80px 140px 32px;
+    grid-template-columns: 1fr 80px 80px 70px 140px 32px;
     gap: 8px;
     margin-bottom: 6px;
     font-size: 0.78rem;
@@ -1578,7 +1578,7 @@ textarea.form-control {
 
 .grade-matrix-row {
     display: grid;
-    grid-template-columns: 1fr 80px 80px 140px 32px;
+    grid-template-columns: 1fr 80px 80px 70px 140px 32px;
     gap: 8px;
     margin-bottom: 6px;
     align-items: center;
