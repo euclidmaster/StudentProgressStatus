@@ -61,6 +61,7 @@ CREATE TABLE comments (
     author TEXT DEFAULT '',
     author_role TEXT DEFAULT '',
     content TEXT DEFAULT '',
+    recipients JSONB DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ
 );
