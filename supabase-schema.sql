@@ -37,6 +37,8 @@ CREATE TABLE plans (
     unit_label TEXT DEFAULT '',
     completed_units INTEGER DEFAULT 0,
     status TEXT DEFAULT 'active',
+    tracking_mode TEXT DEFAULT 'numeric',
+    checklist_items JSONB DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ
 );

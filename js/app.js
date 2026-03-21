@@ -101,7 +101,7 @@ const App = {
         });
 
         // Submit
-        newRegForm.addEventListener('submit', (e) => {
+        newRegForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const errorEl = newRegForm.querySelector('#register-error');
             const role = newRegForm.querySelector('#reg-role').value;
@@ -139,10 +139,10 @@ const App = {
                 const grade = newRegForm.querySelector('#reg-grade').value;
                 const className = newRegForm.querySelector('#reg-class').value.trim() || '-';
                 const phone = newRegForm.querySelector('#reg-phone').value.trim() || '';
-                const student = DataStore.addStudent({ name, school, grade, className, phone, status: '대기', enrollDate: new Date().toISOString().slice(0, 10) });
-                DataStore.addTeacher({ name, loginId, password: pw, role: 'student', assignedStudentIds: [student.id], studentId: student.id, approved: false, regDate: new Date().toISOString().slice(0, 10) });
+                const student = await DataStore.addStudent({ name, school, grade, className, phone, status: '대기', enrollDate: new Date().toISOString().slice(0, 10) });
+                await DataStore.addTeacher({ name, loginId, password: pw, role: 'student', assignedStudentIds: [student.id], studentId: student.id, approved: false, regDate: new Date().toISOString().slice(0, 10) });
             } else {
-                DataStore.addTeacher({ name, loginId, password: pw, role, assignedStudentIds: [], approved: false, regDate: new Date().toISOString().slice(0, 10) });
+                await DataStore.addTeacher({ name, loginId, password: pw, role, assignedStudentIds: [], approved: false, regDate: new Date().toISOString().slice(0, 10) });
             }
 
             this.toast('회원가입 신청이 완료되었습니다. 원장 승인 후 로그인할 수 있습니다.', 'success');
@@ -1850,6 +1850,8 @@ const App = {
                     await DataStore.updateStudent(student.id, data);
                     this.toast('학생 정보가 수정되었습니다.', 'success');
                 } else {
+                    data.status = 'active';
+                    data.enrollDate = new Date().toISOString().slice(0, 10);
                     await DataStore.addStudent(data);
                     this.toast('새 학생이 등록되었습니다.', 'success');
                 }
@@ -2242,10 +2244,12 @@ const App = {
             const ci = parseInt(e.target.dataset.ci);
             const plan = DataStore.getPlan(planId);
             if (plan && plan.checklistItems) {
-                plan.checklistItems[ci].completed = e.target.checked;
-                const completed = plan.checklistItems.filter(i => i.completed).length;
+                const updatedItems = plan.checklistItems.map((item, i) =>
+                    i === ci ? { ...item, completed: e.target.checked } : { ...item }
+                );
+                const completed = updatedItems.filter(i => i.completed).length;
                 try {
-                    await DataStore.updatePlan(planId, { checklistItems: plan.checklistItems, completedUnits: completed });
+                    await DataStore.updatePlan(planId, { checklistItems: updatedItems, completedUnits: completed });
                     if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
                     else this.navigate(this.currentView);
                 } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
@@ -2797,8 +2801,9 @@ const App = {
                 : '<span class="badge badge-primary">선생님</span>';
 
             const readers = msg.authorRole === 'director'
-                ? ['김선생', '박선생', '이선생']
-                : ['원장'];
+                ? DataStore.getTeachers().filter(t => t.role === 'teacher' && t.approved).map(t => t.name)
+                : DataStore.getTeachers().filter(t => t.role === 'director').map(t => t.name);
+            if (readers.length === 0) readers.push(msg.authorRole === 'director' ? '선생님' : '원장');
 
             return `<div class="msg-card ${msg.pinned ? 'msg-pinned' : ''}">
                 <div class="msg-card-header">
@@ -2868,8 +2873,9 @@ const App = {
         const readBy = msg.readBy || {};
 
         const readers = msg.authorRole === 'director'
-            ? ['김선생', '박선생', '이선생']
-            : ['원장'];
+            ? DataStore.getTeachers().filter(t => t.role === 'teacher' && t.approved).map(t => t.name)
+            : DataStore.getTeachers().filter(t => t.role === 'director').map(t => t.name);
+        if (readers.length === 0) readers.push(msg.authorRole === 'director' ? '선생님' : '원장');
 
         const html = `
             <div style="margin-bottom:16px">

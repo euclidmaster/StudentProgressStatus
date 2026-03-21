@@ -174,6 +174,15 @@ const DataStore = {
     async deleteStudent(id) {
         for (const p of this.getStudentPlans(id)) await this.deletePlan(p.id);
         for (const c of this.getStudentComments(id)) await this._delete(this.TABLES.COMMENTS, c.id);
+        for (const g of this.getStudentGrades(id)) await this.deleteGrade(g.id);
+        for (const m of this.getMessages().filter(m => m.studentId === id)) await this.deleteMessage(m.id);
+        // Clean assignedStudentIds from teachers
+        for (const t of this.getTeachers()) {
+            if (t.assignedStudentIds && t.assignedStudentIds.includes(id)) {
+                const updated = t.assignedStudentIds.filter(sid => sid !== id);
+                await this.updateTeacher(t.id, { assignedStudentIds: updated });
+            }
+        }
         return await this._delete(this.TABLES.STUDENTS, id);
     },
 
@@ -181,10 +190,10 @@ const DataStore = {
         if (!query) return this.getStudents();
         const q = query.toLowerCase();
         return this.getStudents().filter(s =>
-            s.name.toLowerCase().includes(q) ||
-            s.school.toLowerCase().includes(q) ||
-            s.grade.toLowerCase().includes(q) ||
-            s.className.toLowerCase().includes(q)
+            (s.name || '').toLowerCase().includes(q) ||
+            (s.school || '').toLowerCase().includes(q) ||
+            (s.grade || '').toLowerCase().includes(q) ||
+            (s.className || '').toLowerCase().includes(q)
         );
     },
 
