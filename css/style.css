@@ -1525,6 +1525,21 @@ textarea.form-control {
     margin-right: 6px;
 }
 
+/* === Student Context Banner === */
+.student-context-banner {
+    background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
+    border: 1px solid #6EE7B7;
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #047857;
+}
+
+.student-context-banner i {
+    margin-right: 6px;
+}
+
 /* === Comment Recipients === */
 .recipient-checks {
     display: flex;

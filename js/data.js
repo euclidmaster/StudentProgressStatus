@@ -481,4 +481,53 @@ const DataStore = {
 
     async deleteTeacher(id) { return await this._delete(this.TABLES.TEACHERS, id); },
 
+    // ==========================================
+    //  권한 기반 필터링 메서드 (Permissions 모듈 연동)
+    // ==========================================
+
+    /**
+     * 현재 사용자가 볼 수 있는 코멘트 필터링
+     * - 원장/선생: 모든 코멘트
+     * - 학생: recipients에 'student'가 포함된 코멘트만
+     */
+    getVisibleComments(studentId = null) {
+        let comments = this.getComments();
+        if (studentId) {
+            comments = comments.filter(c => c.studentId === studentId);
+        }
+        
+        // Permissions 모듈이 로드되어 있으면 필터링 적용
+        if (typeof Permissions !== 'undefined') {
+            comments = Permissions.filterVisibleComments(comments);
+        }
+        
+        return comments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
+    /**
+     * 학생용 코멘트 필터링 (학생에게 공개된 코멘트만)
+     */
+    getStudentVisibleComments(studentId) {
+        return this.getComments()
+            .filter(c => c.studentId === studentId)
+            .filter(c => {
+                const recipients = c.recipients || [];
+                return recipients.includes('student');
+            })
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
+    /**
+     * 내부 코멘트 필터링 (선생/원장 간 소통용, 학생 미공개)
+     */
+    getInternalComments(studentId) {
+        return this.getComments()
+            .filter(c => c.studentId === studentId)
+            .filter(c => {
+                const recipients = c.recipients || [];
+                return !recipients.includes('student');
+            })
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
 };

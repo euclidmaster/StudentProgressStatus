@@ -411,7 +411,11 @@ const App = {
         const allPlans = DataStore.getPlans().filter(p => visibleIds.includes(p.studentId));
         const activePlans = allPlans.filter(p => p.status === 'active');
         const completedPlans = allPlans.filter(p => p.status === 'completed');
-        const allComments = DataStore.getComments().filter(c => visibleIds.includes(c.studentId));
+        // 권한 기반 코멘트 필터링
+        const allComments = Permissions.filterVisibleComments(
+            DataStore.getComments().filter(c => visibleIds.includes(c.studentId))
+        );
+        const isStudent = Permissions.isStudent();
 
         let avgProgress = 0;
         if (activePlans.length > 0) {
@@ -434,16 +438,17 @@ const App = {
             .slice(0, 5);
 
         const userLabel = this.currentUser
-            ? (this.currentUser.role === 'director' ? '전체' : `${this.currentUser.name} 담당`)
+            ? (this.currentUser.role === 'director' ? '전체' : this.currentUser.role === 'student' ? '내' : `${this.currentUser.name} 담당`)
             : '전체';
 
         const html = `
             ${this.currentUser && this.currentUser.role === 'teacher' ? `<div class="teacher-context-banner"><i class="fas fa-chalkboard-teacher"></i> <strong>${this.escapeHtml(this.currentUser.name)}</strong> 담당 학생 현황 (${students.length}명)</div>` : ''}
+            ${isStudent ? `<div class="student-context-banner"><i class="fas fa-user-graduate"></i> <strong>${this.escapeHtml(this.currentUser.name)}</strong>님의 학습 현황</div>` : ''}
             <div class="stats-grid">
-                <div class="stat-card">
+                ${!isStudent ? `<div class="stat-card">
                     <div class="stat-icon blue"><i class="fas fa-user-graduate"></i></div>
                     <div class="stat-info"><h3>${stats.totalStudents}</h3><p>${userLabel} 학생</p></div>
-                </div>
+                </div>` : ''}
                 <div class="stat-card">
                     <div class="stat-icon green"><i class="fas fa-book-open"></i></div>
                     <div class="stat-info"><h3>${stats.activePlans}</h3><p>진행 중인 학습 계획</p></div>
@@ -480,10 +485,13 @@ const App = {
                         ${recentComments.length === 0 ? '<div class="empty-state"><p>아직 코멘트가 없습니다.</p></div>' :
                             recentComments.map(c => {
                                 const student = DataStore.getStudent(c.studentId);
+                                // 내부 코멘트 표시 (학생에게는 보이지 않음)
+                                const isInternal = !(c.recipients || []).includes('student');
+                                const internalTag = (!isStudent && isInternal) ? ' <span class="badge badge-gray" style="font-size:0.6rem"><i class="fas fa-lock"></i></span>' : '';
                                 return `<div class="activity-item">
                                     <div class="activity-dot ${c.authorRole === 'teacher' ? 'blue' : c.authorRole === 'parent' ? 'green' : 'yellow'}"></div>
                                     <div class="activity-text">
-                                        <strong>${this.escapeHtml(c.author)}</strong> ${this.getRoleBadge(c.authorRole)}
+                                        <strong>${this.escapeHtml(c.author)}</strong> ${this.getRoleBadge(c.authorRole)}${internalTag}
                                         ${student ? `→ <span class="student-name" data-action="view-student" data-id="${student.id}">${this.escapeHtml(student.name)}</span>` : ''}
                                         <br>${this.escapeHtml(c.content).substring(0, 60)}${c.content.length > 60 ? '...' : ''}
                                     </div>
@@ -497,12 +505,12 @@ const App = {
             <div class="card" style="margin-top:20px">
                 <div class="card-header">
                     <h2><i class="fas fa-users"></i> 학생별 진도 요약</h2>
-                    <button class="btn btn-sm btn-outline" data-action="go-students">전체 보기</button>
+                    ${!isStudent ? `<button class="btn btn-sm btn-outline" data-action="go-students">전체 보기</button>` : ''}
                 </div>
                 <div class="card-body no-padding">
                     <div class="table-wrapper">
                         <table>
-                            <thead><tr><th>학생명</th><th>학교/학년</th><th>반</th><th>진행 계획</th><th>평균 진행률</th><th></th></tr></thead>
+                            <thead><tr><th>학생명</th><th>학교/학년</th><th>반</th><th>진행 계획</th><th>평균 진행률</th>${!isStudent ? '<th></th>' : ''}</tr></thead>
                             <tbody>
                                 ${students.map(s => {
                                     const plans = DataStore.getStudentPlans(s.id).filter(p => p.status === 'active');
@@ -519,7 +527,7 @@ const App = {
                                             </div>
                                             <span style="font-weight:600;font-size:0.85rem">${avg}%</span>
                                         </td>
-                                        <td><button class="btn btn-sm btn-ghost" data-action="view-student" data-id="${s.id}"><i class="fas fa-arrow-right"></i></button></td>
+                                        ${!isStudent ? `<td><button class="btn btn-sm btn-ghost" data-action="view-student" data-id="${s.id}"><i class="fas fa-arrow-right"></i></button></td>` : ''}
                                     </tr>`;
                                 }).join('')}
                             </tbody>
@@ -678,9 +686,15 @@ const App = {
         const plans = DataStore.getStudentPlans(studentId);
         const activePlans = plans.filter(p => p.status === 'active');
         const subjectProgress = DataStore.getStudentSubjectProgress(studentId);
-        const comments = DataStore.getStudentComments(studentId);
+        // 권한 기반 코멘트 필터링
+        const comments = DataStore.getVisibleComments(studentId);
         const studentGrades = DataStore.getStudentGrades(studentId);
         const assignedTeachers = DataStore.getStudentTeachers(studentId);
+
+        // 권한 체크
+        const canEdit = Permissions.canEditStudent(studentId);
+        const canAddComment = Permissions.canAddComment(studentId);
+        const isStudent = Permissions.isStudent();
 
         const initial = student.name.charAt(0);
 
@@ -700,9 +714,9 @@ const App = {
                     </div>
                 </div>
                 <div class="student-header-actions">
-                    <button class="btn btn-outline btn-sm" data-action="edit-student" data-id="${studentId}"><i class="fas fa-edit"></i> 수정</button>
+                    ${canEdit ? `<button class="btn btn-outline btn-sm" data-action="edit-student" data-id="${studentId}"><i class="fas fa-edit"></i> 수정</button>` : ''}
                     ${this.currentUser && this.currentUser.role === 'director' ? `<button class="btn btn-outline btn-sm" data-action="assign-teachers" data-student-id="${studentId}"><i class="fas fa-chalkboard-teacher"></i> 담당 지정</button>` : ''}
-                    <button class="btn btn-primary btn-sm" data-action="add-plan" data-student-id="${studentId}"><i class="fas fa-plus"></i> 학습 계획 추가</button>
+                    ${canEdit ? `<button class="btn btn-primary btn-sm" data-action="add-plan" data-student-id="${studentId}"><i class="fas fa-plus"></i> 학습 계획 추가</button>` : ''}
                 </div>
             </div>
 
@@ -745,7 +759,7 @@ const App = {
             <div class="card" style="margin-bottom:20px">
                 <div class="card-header">
                     <h2><i class="fas fa-book-open"></i> 학습 계획 (${plans.length}개)</h2>
-                    <button class="btn btn-sm btn-primary" data-action="add-plan" data-student-id="${studentId}"><i class="fas fa-plus"></i> 추가</button>
+                    ${canEdit ? `<button class="btn btn-sm btn-primary" data-action="add-plan" data-student-id="${studentId}"><i class="fas fa-plus"></i> 추가</button>` : ''}
                 </div>
                 <div class="card-body">
                     ${plans.length === 0 ? '<div class="empty-state"><i class="fas fa-book"></i><h3>등록된 학습 계획이 없습니다</h3><p>학습 계획을 추가해주세요.</p></div>' :
@@ -760,11 +774,11 @@ const App = {
                                         ${this.getDifficultyBadge(plan.difficulty)}
                                         ${isChecklist ? '<span class="badge badge-info" style="font-size:0.68rem"><i class="fas fa-tasks"></i> 단원별</span>' : ''}
                                     </div>
-                                    <div class="plan-card-actions">
+                                    ${canEdit ? `<div class="plan-card-actions">
                                         ${!isChecklist ? `<button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-plus"></i> 진도 입력</button>` : ''}
                                         <button class="btn btn-sm btn-outline" data-action="edit-plan" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-edit"></i></button>
                                         <button class="btn btn-sm btn-ghost" data-action="delete-plan" data-plan-id="${plan.id}" data-student-id="${studentId}" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
-                                    </div>
+                                    </div>` : ''}
                                 </div>
                                 <div class="plan-card-meta">
                                     <span><i class="fas fa-book"></i> ${this.escapeHtml(plan.textbook)}</span>
@@ -800,7 +814,7 @@ const App = {
             <div class="card" style="margin-bottom:20px">
                 <div class="card-header">
                     <h2><i class="fas fa-trophy"></i> 성적 (${studentGrades.length}건)</h2>
-                    <button class="btn btn-sm btn-primary" data-action="add-grade" data-student-id="${studentId}"><i class="fas fa-plus"></i> 성적 입력</button>
+                    ${canEdit ? `<button class="btn btn-sm btn-primary" data-action="add-grade" data-student-id="${studentId}"><i class="fas fa-plus"></i> 성적 입력</button>` : ''}
                 </div>
                 <div class="card-body ${studentGrades.length > 0 ? 'no-padding' : ''}">
                     ${studentGrades.length === 0 ? '<div class="empty-state"><i class="fas fa-trophy"></i><h3>등록된 성적이 없습니다</h3><p>시험 성적을 입력해주세요.</p></div>' :
@@ -809,7 +823,7 @@ const App = {
                                 const allSubs = new Set();
                                 studentGrades.forEach(g => (g.subjects || []).forEach(s => allSubs.add(s.subject)));
                                 return [...allSubs].sort().map(s => `<th>${this.escapeHtml(s)}</th>`).join('');
-                            })()}<th>평균</th><th>석차</th><th></th></tr></thead>
+                            })()}<th>평균</th><th>석차</th>${canEdit ? '<th></th>' : ''}</tr></thead>
                             <tbody>${studentGrades.map(g => {
                                 const allSubs = new Set();
                                 studentGrades.forEach(gg => (gg.subjects || []).forEach(s => allSubs.add(s.subject)));
@@ -830,10 +844,10 @@ const App = {
                                     }).join('')}
                                     <td><strong>${g.totalAvg || '-'}</strong></td>
                                     <td style="font-size:0.82rem;color:var(--gray-500)">${this.escapeHtml(g.totalRank || '-')}</td>
-                                    <td>
+                                    ${canEdit ? `<td>
                                         <button class="btn-icon" data-action="edit-grade" data-grade-id="${g.id}" title="수정"><i class="fas fa-edit"></i></button>
                                         <button class="btn-icon" data-action="delete-grade" data-grade-id="${g.id}" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
-                                    </td>
+                                    </td>` : ''}
                                 </tr>`;
                             }).join('')}</tbody>
                         </table></div>`}
@@ -843,14 +857,16 @@ const App = {
             <div class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-comments"></i> 코멘트 (${comments.length}개)</h2>
-                    <button class="btn btn-sm btn-primary" data-action="add-comment" data-student-id="${studentId}"><i class="fas fa-plus"></i> 코멘트 작성</button>
+                    ${canAddComment ? `<button class="btn btn-sm btn-primary" data-action="add-comment" data-student-id="${studentId}"><i class="fas fa-plus"></i> 코멘트 작성</button>` : ''}
                 </div>
                 <div class="card-body" style="padding:0">
                     ${comments.length === 0 ? '<div class="empty-state" style="padding:40px"><i class="fas fa-comment-slash"></i><h3>코멘트가 없습니다</h3></div>' :
                         comments.map(c => {
                             const plan = c.planId ? DataStore.getPlan(c.planId) : null;
-                            const recipientTags = (c.recipients && c.recipients.length > 0)
-                                ? `<div class="comment-recipients"><i class="fas fa-share"></i> ${c.recipients.map(r => r === 'student' ? '<span class="badge badge-warning">학생</span>' : r === 'parent' ? '<span class="badge badge-success">학부모</span>' : '<span class="badge badge-danger">원장</span>').join(' ')}</div>`
+                            const canDeleteThis = Permissions.canDeleteComment(c);
+                            // 학생에게는 수신 대상 표시 안함, 선생/원장에게만 표시
+                            const recipientTags = (!isStudent && c.recipients && c.recipients.length > 0)
+                                ? `<div class="comment-recipients"><i class="fas fa-share"></i> ${c.recipients.map(r => r === 'student' ? '<span class="badge badge-warning">학생</span>' : r === 'parent' ? '<span class="badge badge-success">학부모</span>' : '<span class="badge badge-danger">원장</span>').join(' ')}${!(c.recipients || []).includes('student') ? ' <span class="badge badge-gray" style="font-size:0.65rem"><i class="fas fa-lock"></i> 내부</span>' : ''}</div>`
                                 : '';
                             return `<div class="comment-item">
                                 <div class="comment-avatar ${c.authorRole}">${this.escapeHtml(c.author.charAt(0))}</div>
@@ -859,7 +875,7 @@ const App = {
                                         <span class="comment-author">${this.escapeHtml(c.author)}</span>
                                         ${this.getRoleBadge(c.authorRole)}
                                         <span class="comment-date">${this.formatDateTime(c.createdAt)}</span>
-                                        <button class="btn-icon" data-action="delete-comment" data-comment-id="${c.id}" data-student-id="${studentId}" style="margin-left:auto;font-size:0.75rem;color:var(--gray-400)"><i class="fas fa-trash"></i></button>
+                                        ${canDeleteThis ? `<button class="btn-icon" data-action="delete-comment" data-comment-id="${c.id}" data-student-id="${studentId}" style="margin-left:auto;font-size:0.75rem;color:var(--gray-400)"><i class="fas fa-trash"></i></button>` : ''}
                                     </div>
                                     <div class="comment-text">${this.escapeHtml(c.content)}</div>
                                     ${recipientTags}
@@ -1104,10 +1120,12 @@ const App = {
     // =========================================
     renderComments() {
         const visibleIds = this.getVisibleStudentIds();
-        const comments = DataStore.getComments()
-            .filter(c => visibleIds.includes(c.studentId))
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        // 권한 기반 코멘트 필터링
+        const comments = Permissions.filterVisibleComments(
+            DataStore.getComments().filter(c => visibleIds.includes(c.studentId))
+        ).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         const students = this.getVisibleStudents();
+        const isStudent = Permissions.isStudent();
 
         const html = `
             <div class="toolbar">
@@ -1116,20 +1134,20 @@ const App = {
                         <option value="">전체 학생</option>
                         ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)}</option>`).join('')}
                     </select>
-                    <select class="filter-select" id="filter-comment-role" onchange="App.filterComments()">
+                    ${!isStudent ? `<select class="filter-select" id="filter-comment-role" onchange="App.filterComments()">
                         <option value="">전체 역할</option>
                         <option value="teacher">선생님</option>
                         <option value="parent">학부모</option>
                         <option value="student">학생</option>
                         <option value="admin">관리자</option>
-                    </select>
+                    </select>` : ''}
                     <span style="color:var(--gray-500);font-size:0.85rem">${comments.length}개</span>
                 </div>
             </div>
 
             <div class="card">
                 <div class="card-body" style="padding:0" id="comments-container">
-                    ${this.renderCommentList(comments)}
+                    ${this.renderCommentList(comments, isStudent)}
                 </div>
             </div>
         `;
@@ -1137,13 +1155,17 @@ const App = {
         document.getElementById('content-area').innerHTML = html;
     },
 
-    renderCommentList(comments) {
+    renderCommentList(comments, isStudentView = false) {
         if (comments.length === 0) return '<div class="empty-state"><i class="fas fa-comment-slash"></i><h3>코멘트가 없습니다</h3></div>';
+        const isStudent = isStudentView || Permissions.isStudent();
         return comments.map(c => {
             const student = DataStore.getStudent(c.studentId);
             const plan = c.planId ? DataStore.getPlan(c.planId) : null;
-            const recipientTags = (c.recipients && c.recipients.length > 0)
-                ? `<div class="comment-recipients"><i class="fas fa-share"></i> ${c.recipients.map(r => r === 'student' ? '<span class="badge badge-warning">학생</span>' : r === 'parent' ? '<span class="badge badge-success">학부모</span>' : '<span class="badge badge-danger">원장</span>').join(' ')}</div>`
+            const canDeleteThis = Permissions.canDeleteComment(c);
+            // 학생에게는 수신 대상 표시 안함, 선생/원장에게만 표시
+            const isInternal = !(c.recipients || []).includes('student');
+            const recipientTags = (!isStudent && c.recipients && c.recipients.length > 0)
+                ? `<div class="comment-recipients"><i class="fas fa-share"></i> ${c.recipients.map(r => r === 'student' ? '<span class="badge badge-warning">학생</span>' : r === 'parent' ? '<span class="badge badge-success">학부모</span>' : '<span class="badge badge-danger">원장</span>').join(' ')}${isInternal ? ' <span class="badge badge-gray" style="font-size:0.65rem"><i class="fas fa-lock"></i> 내부</span>' : ''}</div>`
                 : '';
             return `<div class="comment-item">
                 <div class="comment-avatar ${c.authorRole}">${this.escapeHtml(c.author.charAt(0))}</div>
@@ -1153,6 +1175,7 @@ const App = {
                         ${this.getRoleBadge(c.authorRole)}
                         ${student ? `<span style="color:var(--gray-400)">→</span> <span class="student-name" data-action="view-student" data-id="${student.id}" style="font-size:0.85rem">${this.escapeHtml(student.name)}</span>` : ''}
                         <span class="comment-date">${this.formatDateTime(c.createdAt)}</span>
+                        ${canDeleteThis ? `<button class="btn-icon" data-action="delete-comment" data-comment-id="${c.id}" style="margin-left:auto;font-size:0.75rem;color:var(--gray-400)"><i class="fas fa-trash"></i></button>` : ''}
                     </div>
                     <div class="comment-text">${this.escapeHtml(c.content)}</div>
                     ${recipientTags}
@@ -1164,11 +1187,13 @@ const App = {
 
     filterComments() {
         const studentId = document.getElementById('filter-comment-student').value;
-        const role = document.getElementById('filter-comment-role').value;
+        const roleEl = document.getElementById('filter-comment-role');
+        const role = roleEl ? roleEl.value : '';
         const visibleIds = this.getVisibleStudentIds();
-        let comments = DataStore.getComments()
-            .filter(c => visibleIds.includes(c.studentId))
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        // 권한 기반 필터링
+        let comments = Permissions.filterVisibleComments(
+            DataStore.getComments().filter(c => visibleIds.includes(c.studentId))
+        ).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         if (studentId) comments = comments.filter(c => c.studentId === studentId);
         if (role) comments = comments.filter(c => c.authorRole === role);
         document.getElementById('comments-container').innerHTML = this.renderCommentList(comments);
