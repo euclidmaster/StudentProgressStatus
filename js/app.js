@@ -4,6 +4,7 @@ const App = {
     currentView: 'dashboard',
     currentStudentId: null,
     currentUser: null,
+    msgChannel: 'internal',
 
     async init() {
         let supabaseOk = false;
@@ -237,14 +238,22 @@ const App = {
     updateUnreadBadge() {
         const badge = document.getElementById('unread-badge');
         if (!badge) return;
-        const messages = DataStore.getMessages();
         const userName = this.currentUser ? this.currentUser.name : '';
-        const unread = messages.filter(m => {
-            const rb = m.readBy || {};
-            // For director, count messages not read by 원장
-            // For teacher, count messages not read by their name
-            return !rb[userName];
-        }).length;
+        const isTeacher = this.currentUser && this.currentUser.role === 'teacher';
+
+        // 내부 소통 메시지 (기존)
+        let internalMsgs = DataStore.getMessages().filter(m => m.channel !== 'team');
+        if (isTeacher) {
+            internalMsgs = internalMsgs.filter(m => m.authorRole === 'director' || m.author === userName);
+        }
+        // 업무 공유 메시지
+        const teamMsgs = (isTeacher || (this.currentUser && this.currentUser.role === 'director'))
+            ? DataStore.getMessages().filter(m => m.channel === 'team' && m.author !== userName)
+            : [];
+
+        const allRelevant = [...internalMsgs, ...teamMsgs];
+        const unread = allRelevant.filter(m => !(m.readBy && m.readBy[userName])).length;
+
         if (unread > 0) {
             badge.textContent = unread;
             badge.style.display = 'inline-flex';
@@ -372,7 +381,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', messages: '내부 소통', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -385,6 +394,7 @@ const App = {
             case 'progress': this.renderProgress(); break;
             case 'comments': this.renderComments(); break;
             case 'grades': this.renderGrades(); break;
+            case 'board': this.renderBoard(); break;
             case 'messages': this.renderMessages(); break;
             case 'teachers': this.renderTeachers(); break;
         }
@@ -710,7 +720,7 @@ const App = {
                         <span><i class="fas fa-graduation-cap"></i> ${this.escapeHtml(student.grade)}</span>
                         <span><i class="fas fa-users"></i> ${this.escapeHtml(student.className)}</span>
                         <span><i class="fas fa-phone"></i> ${this.escapeHtml(student.phone)}</span>
-                        ${assignedTeachers.length > 0 ? `<span><i class="fas fa-chalkboard-teacher"></i> ${assignedTeachers.map(t => this.escapeHtml(t.name)).join(', ')}</span>` : ''}
+                        ${assignedTeachers.length > 0 ? `<span><i class="fas fa-chalkboard-teacher"></i> ${assignedTeachers.filter(t => this.currentUser.role === 'director' || t.id === (this.currentUser && this.currentUser.id)).map(t => this.escapeHtml(t.name)).join(', ')}</span>` : ''}
                     </div>
                 </div>
                 <div class="student-header-actions">
@@ -2367,6 +2377,14 @@ const App = {
                 this.showMessageForm();
                 break;
 
+            case 'add-team-message':
+                this.showTeamMessageForm();
+                break;
+
+            case 'view-team-message-detail':
+                this.showTeamMessageDetail(target.dataset.messageId);
+                break;
+
             case 'toggle-read': {
                 const msgId = target.dataset.messageId;
                 const reader = target.dataset.reader;
@@ -2498,6 +2516,66 @@ const App = {
                     } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
                     this.renderTeachers();
                 }
+                break;
+
+            // Board actions
+            case 'board-switch-tab':
+                this._boardTab = target.dataset.tab;
+                this.renderBoard();
+                break;
+
+            case 'add-board-post':
+                this.showBoardPostForm();
+                break;
+
+            case 'view-board-post':
+                this.showBoardPostDetail(target.dataset.postId);
+                break;
+
+            case 'delete-board-post':
+                if (confirm('이 게시글을 삭제하시겠습니까?')) {
+                    try {
+                        await DataStore.deleteBoardPost(target.dataset.postId);
+                        this.toast('게시글이 삭제되었습니다.', 'success');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                    this.renderBoard();
+                }
+                break;
+
+            case 'add-board-event':
+                this.showBoardEventForm();
+                break;
+
+            case 'delete-board-event':
+                if (confirm('이 일정을 삭제하시겠습니까?')) {
+                    try {
+                        await DataStore.deleteBoardEvent(target.dataset.eventId);
+                        this.toast('일정이 삭제되었습니다.', 'success');
+                    } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                    this.renderBoard();
+                }
+                break;
+
+            case 'board-cal-prev':
+                this._boardCalMonth--;
+                if (this._boardCalMonth < 0) { this._boardCalMonth = 11; this._boardCalYear--; }
+                this.renderBoard();
+                break;
+
+            case 'board-cal-next':
+                this._boardCalMonth++;
+                if (this._boardCalMonth > 11) { this._boardCalMonth = 0; this._boardCalYear++; }
+                this.renderBoard();
+                break;
+
+            case 'board-cal-today':
+                this._boardCalYear = new Date().getFullYear();
+                this._boardCalMonth = new Date().getMonth();
+                this.renderBoard();
+                break;
+
+            case 'board-cal-click':
+                this.showDateEvents(target.dataset.date || target.closest('[data-date]').dataset.date);
                 break;
         }
     },
@@ -2774,21 +2852,471 @@ const App = {
     },
 
     // =========================================
+    //  VIEW: BOARD (학원 게시판)
+    // =========================================
+    _boardTab: 'posts',
+    _boardCalYear: new Date().getFullYear(),
+    _boardCalMonth: new Date().getMonth(),
+
+    renderBoard() {
+        const tab = this._boardTab || 'posts';
+        const role = this.currentUser ? this.currentUser.role : '';
+
+        const tabsHtml = `
+            <div class="board-tabs">
+                <button class="board-tab ${tab === 'posts' ? 'active' : ''}" data-action="board-switch-tab" data-tab="posts">
+                    <i class="fas fa-clipboard-list"></i> 게시판
+                </button>
+                <button class="board-tab ${tab === 'calendar' ? 'active' : ''}" data-action="board-switch-tab" data-tab="calendar">
+                    <i class="fas fa-calendar-alt"></i> 학원 일정
+                </button>
+            </div>
+        `;
+
+        if (tab === 'posts') {
+            this.renderBoardPosts(tabsHtml);
+        } else {
+            this.renderBoardCalendar(tabsHtml);
+        }
+    },
+
+    // 공유 범위 필터링
+    filterByScope(items) {
+        const user = this.currentUser;
+        if (!user) return [];
+        return items.filter(item => {
+            if (item.scope === 'all') return true;
+            if (item.scope === 'staff') return user.role === 'director' || user.role === 'teacher';
+            if (item.scope === 'private') return item.authorId === user.id;
+            return true;
+        });
+    },
+
+    getScopeBadge(scope) {
+        const map = {
+            all: ['badge-success', '전체'],
+            staff: ['badge-primary', '강사진'],
+            private: ['badge-warning', '개인']
+        };
+        const [cls, label] = map[scope] || ['badge-gray', scope];
+        return `<span class="badge ${cls}">${this.escapeHtml(label)}</span>`;
+    },
+
+    getScopeColor(scope) {
+        return { all: 'var(--success)', staff: 'var(--primary)', private: 'var(--warning)' }[scope] || 'var(--gray-400)';
+    },
+
+    // ---- 게시판 탭 ----
+    renderBoardPosts(tabsHtml) {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const canWrite = role === 'director' || role === 'teacher';
+        let posts = this.filterByScope(DataStore.getBoardPosts());
+
+        const html = `
+            ${tabsHtml}
+            <div class="toolbar">
+                <div class="toolbar-filters">
+                    <select class="filter-select" id="filter-board-scope" onchange="App.filterBoardPosts()">
+                        <option value="">전체 범위</option>
+                        <option value="all">🟢 학원 전체</option>
+                        ${role !== 'student' ? '<option value="staff">🔵 강사진</option>' : ''}
+                        <option value="private">🟡 개인</option>
+                    </select>
+                    <span style="color:var(--gray-500);font-size:0.85rem">${posts.length}건</span>
+                </div>
+                ${canWrite ? '<button class="btn btn-primary" data-action="add-board-post"><i class="fas fa-pen"></i> 새 글 작성</button>' : ''}
+            </div>
+
+            <div id="board-posts-container">
+                ${this.renderBoardPostCards(posts)}
+            </div>
+        `;
+        document.getElementById('content-area').innerHTML = html;
+    },
+
+    renderBoardPostCards(posts) {
+        if (posts.length === 0) return '<div class="empty-state"><i class="fas fa-clipboard-list"></i><h3>게시글이 없습니다</h3></div>';
+        const role = this.currentUser ? this.currentUser.role : '';
+
+        return posts.map(post => {
+            const canDelete = role === 'director' || post.authorId === (this.currentUser && this.currentUser.id);
+            const roleBadge = post.authorRole === 'director'
+                ? '<span class="badge badge-danger">원장</span>'
+                : '<span class="badge badge-primary">선생님</span>';
+
+            return `<div class="board-post-card">
+                <div class="board-post-header">
+                    <div class="board-post-meta">
+                        ${this.getScopeBadge(post.scope)}
+                        ${roleBadge}
+                        <span class="board-post-author">${this.escapeHtml(post.author)}</span>
+                        <span class="board-post-date">${this.formatDateTime(post.createdAt)}</span>
+                    </div>
+                    ${canDelete ? `<button class="btn-icon" data-action="delete-board-post" data-post-id="${post.id}" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>` : ''}
+                </div>
+                <div class="board-post-body" data-action="view-board-post" data-post-id="${post.id}" style="cursor:pointer">
+                    <h3 class="board-post-title">${this.escapeHtml(post.title)}</h3>
+                    <p class="board-post-preview">${this.escapeHtml(post.content).substring(0, 150)}${post.content.length > 150 ? '...' : ''}</p>
+                </div>
+            </div>`;
+        }).join('');
+    },
+
+    filterBoardPosts() {
+        const scope = document.getElementById('filter-board-scope').value;
+        let posts = this.filterByScope(DataStore.getBoardPosts());
+        if (scope) posts = posts.filter(p => p.scope === scope);
+        const container = document.getElementById('board-posts-container');
+        if (container) container.innerHTML = this.renderBoardPostCards(posts);
+    },
+
+    showBoardPostDetail(postId) {
+        const post = DataStore.getBoardPost(postId);
+        if (!post) return;
+        const roleBadge = post.authorRole === 'director'
+            ? '<span class="badge badge-danger">원장</span>'
+            : '<span class="badge badge-primary">선생님</span>';
+
+        const html = `
+            <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+                ${this.getScopeBadge(post.scope)} ${roleBadge}
+                <span style="font-weight:600">${this.escapeHtml(post.author)}</span>
+                <span style="font-size:0.82rem;color:var(--gray-400)">${this.formatDateTime(post.createdAt)}</span>
+            </div>
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px;font-size:0.93rem;line-height:1.8;color:var(--gray-700);white-space:pre-line">${this.escapeHtml(post.content)}</div>
+        `;
+        this.openModal(post.title, html);
+    },
+
+    showBoardPostForm() {
+        const user = this.currentUser;
+        const authorName = user ? user.name : '';
+        const role = user ? user.role : 'teacher';
+
+        const html = `
+            <form id="board-post-form">
+                <div class="form-group">
+                    <label>작성자</label>
+                    <input type="text" class="form-control" name="author" value="${this.escapeHtml(authorName)}" readonly style="background:var(--gray-50)">
+                </div>
+                <div class="form-group">
+                    <label>공유 범위 <span class="required">*</span></label>
+                    <div class="scope-select-group">
+                        <label class="scope-option scope-all">
+                            <input type="radio" name="scope" value="all" checked>
+                            <span><i class="fas fa-globe"></i> 학원 전체</span>
+                            <small>원장, 선생, 학생, 학부모</small>
+                        </label>
+                        <label class="scope-option scope-staff">
+                            <input type="radio" name="scope" value="staff">
+                            <span><i class="fas fa-user-tie"></i> 강사진</span>
+                            <small>원장, 선생님만</small>
+                        </label>
+                        <label class="scope-option scope-private">
+                            <input type="radio" name="scope" value="private">
+                            <span><i class="fas fa-lock"></i> 개인</span>
+                            <small>나만 확인</small>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>제목 <span class="required">*</span></label>
+                    <input type="text" class="form-control" name="title" required placeholder="게시글 제목">
+                </div>
+                <div class="form-group">
+                    <label>내용 <span class="required">*</span></label>
+                    <textarea class="form-control" name="content" rows="6" required placeholder="내용을 입력하세요"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="App.closeModal()">취소</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> 등록</button>
+                </div>
+            </form>
+        `;
+        this.openModal('새 글 작성', html);
+
+        document.getElementById('board-post-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            try {
+                await DataStore.addBoardPost({
+                    author: form.author.value.trim(),
+                    authorRole: role,
+                    authorId: user.id,
+                    scope: form.scope.value,
+                    title: form.title.value.trim(),
+                    content: form.content.value.trim()
+                });
+                this.toast('게시글이 등록되었습니다.', 'success');
+                this.closeModal();
+                this.renderBoard();
+            } catch(err) { this.toast('등록 실패: ' + err.message, 'error'); }
+        });
+    },
+
+    // ---- 학원 일정 탭 (월간 캘린더) ----
+    renderBoardCalendar(tabsHtml) {
+        const year = this._boardCalYear;
+        const month = this._boardCalMonth;
+        const role = this.currentUser ? this.currentUser.role : '';
+        const canWrite = role === 'director' || role === 'teacher';
+        const events = this.filterByScope(DataStore.getEventsForMonth(year, month));
+
+        const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+        const calendarHtml = this.buildCalendarGrid(year, month, events);
+
+        // 이번 달 일정 목록
+        const eventListHtml = events.length === 0
+            ? '<div class="empty-state" style="padding:20px"><i class="fas fa-calendar-check"></i><p>이번 달 일정이 없습니다</p></div>'
+            : events.map(ev => {
+                const canDelete = role === 'director' || ev.authorId === (this.currentUser && this.currentUser.id);
+                return `<div class="event-list-item" style="border-left:3px solid ${this.getScopeColor(ev.scope)}">
+                    <div class="event-list-info">
+                        <span class="event-list-date">${ev.date ? ev.date.slice(5) : ''}</span>
+                        ${this.getScopeBadge(ev.scope)}
+                        <span class="event-list-title">${this.escapeHtml(ev.title)}</span>
+                        ${ev.description ? `<span class="event-list-desc">${this.escapeHtml(ev.description).substring(0, 50)}</span>` : ''}
+                    </div>
+                    ${canDelete ? `<button class="btn-icon" data-action="delete-board-event" data-event-id="${ev.id}" title="삭제" style="color:var(--danger);font-size:0.75rem"><i class="fas fa-trash"></i></button>` : ''}
+                </div>`;
+            }).join('');
+
+        const html = `
+            ${tabsHtml}
+            <div class="toolbar">
+                <div class="toolbar-filters">
+                    <button class="btn btn-sm btn-outline" data-action="board-cal-prev"><i class="fas fa-chevron-left"></i></button>
+                    <h3 style="margin:0;min-width:120px;text-align:center">${year}년 ${monthNames[month]}</h3>
+                    <button class="btn btn-sm btn-outline" data-action="board-cal-next"><i class="fas fa-chevron-right"></i></button>
+                    <button class="btn btn-sm btn-ghost" data-action="board-cal-today" style="margin-left:8px">오늘</button>
+                </div>
+                ${canWrite ? '<button class="btn btn-primary" data-action="add-board-event"><i class="fas fa-plus"></i> 일정 추가</button>' : ''}
+            </div>
+
+            <div class="card" style="margin-bottom:20px">
+                <div class="card-body no-padding">
+                    ${calendarHtml}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-list-ul"></i> ${monthNames[month]} 일정 목록</h2></div>
+                <div class="card-body no-padding">
+                    ${eventListHtml}
+                </div>
+            </div>
+        `;
+        document.getElementById('content-area').innerHTML = html;
+    },
+
+    buildCalendarGrid(year, month, events) {
+        const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        let html = '<table class="cal-table"><thead><tr>';
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+        dayNames.forEach((d, i) => {
+            const cls = i === 0 ? 'cal-sun' : i === 6 ? 'cal-sat' : '';
+            html += `<th class="${cls}">${d}</th>`;
+        });
+        html += '</tr></thead><tbody><tr>';
+
+        // 빈 칸
+        for (let i = 0; i < firstDay; i++) {
+            html += '<td class="cal-cell cal-empty"></td>';
+        }
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const dayOfWeek = new Date(year, month, day).getDay();
+            const isToday = dateStr === todayStr;
+            const dayEvents = events.filter(e => e.date === dateStr);
+
+            const cls = [
+                'cal-cell',
+                isToday ? 'cal-today' : '',
+                dayOfWeek === 0 ? 'cal-sun' : '',
+                dayOfWeek === 6 ? 'cal-sat' : ''
+            ].filter(Boolean).join(' ');
+
+            html += `<td class="${cls}" data-action="board-cal-click" data-date="${dateStr}">
+                <div class="cal-day-num">${day}</div>
+                <div class="cal-events">
+                    ${dayEvents.slice(0, 3).map(ev =>
+                        `<div class="cal-event-dot" style="background:${this.getScopeColor(ev.scope)}" title="${this.escapeHtml(ev.title)}">${this.escapeHtml(ev.title).substring(0, 6)}</div>`
+                    ).join('')}
+                    ${dayEvents.length > 3 ? `<div class="cal-event-more">+${dayEvents.length - 3}</div>` : ''}
+                </div>
+            </td>`;
+
+            if ((firstDay + day) % 7 === 0 && day < daysInMonth) {
+                html += '</tr><tr>';
+            }
+        }
+
+        // 나머지 빈 칸
+        const remaining = (7 - (firstDay + daysInMonth) % 7) % 7;
+        for (let i = 0; i < remaining; i++) {
+            html += '<td class="cal-cell cal-empty"></td>';
+        }
+
+        html += '</tr></tbody></table>';
+        return html;
+    },
+
+    showBoardEventForm(defaultDate) {
+        const user = this.currentUser;
+        const role = user ? user.role : 'teacher';
+        const dateVal = defaultDate || `${this._boardCalYear}-${String(this._boardCalMonth + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+
+        const html = `
+            <form id="board-event-form">
+                <div class="form-group">
+                    <label>날짜 <span class="required">*</span></label>
+                    <input type="date" class="form-control" name="date" required value="${dateVal}">
+                </div>
+                <div class="form-group">
+                    <label>공유 범위 <span class="required">*</span></label>
+                    <div class="scope-select-group">
+                        <label class="scope-option scope-all">
+                            <input type="radio" name="scope" value="all" checked>
+                            <span><i class="fas fa-globe"></i> 학원 전체</span>
+                            <small>원장, 선생, 학생, 학부모</small>
+                        </label>
+                        <label class="scope-option scope-staff">
+                            <input type="radio" name="scope" value="staff">
+                            <span><i class="fas fa-user-tie"></i> 강사진</span>
+                            <small>원장, 선생님만</small>
+                        </label>
+                        <label class="scope-option scope-private">
+                            <input type="radio" name="scope" value="private">
+                            <span><i class="fas fa-lock"></i> 개인</span>
+                            <small>나만 확인</small>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>일정 제목 <span class="required">*</span></label>
+                    <input type="text" class="form-control" name="title" required placeholder="예: 중간고사 시작, 학원 휴무 등">
+                </div>
+                <div class="form-group">
+                    <label>설명</label>
+                    <textarea class="form-control" name="description" rows="3" placeholder="상세 설명 (선택사항)"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="App.closeModal()">취소</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-calendar-plus"></i> 등록</button>
+                </div>
+            </form>
+        `;
+        this.openModal('일정 추가', html);
+
+        document.getElementById('board-event-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            try {
+                await DataStore.addBoardEvent({
+                    date: form.date.value,
+                    scope: form.scope.value,
+                    title: form.title.value.trim(),
+                    description: form.description.value.trim(),
+                    author: user.name,
+                    authorRole: role,
+                    authorId: user.id
+                });
+                this.toast('일정이 등록되었습니다.', 'success');
+                this.closeModal();
+                // 해당 월로 이동
+                const d = new Date(form.date.value);
+                this._boardCalYear = d.getFullYear();
+                this._boardCalMonth = d.getMonth();
+                this.renderBoard();
+            } catch(err) { this.toast('등록 실패: ' + err.message, 'error'); }
+        });
+    },
+
+    showDateEvents(dateStr) {
+        const events = this.filterByScope(DataStore.getBoardEvents().filter(e => e.date === dateStr));
+        const role = this.currentUser ? this.currentUser.role : '';
+        const canWrite = role === 'director' || role === 'teacher';
+
+        const html = `
+            <div class="date-events-list">
+                ${events.length === 0
+                    ? '<div class="empty-state" style="padding:20px"><p>이 날짜에 등록된 일정이 없습니다.</p></div>'
+                    : events.map(ev => {
+                        const canDelete = role === 'director' || ev.authorId === (this.currentUser && this.currentUser.id);
+                        return `<div class="event-list-item" style="border-left:3px solid ${this.getScopeColor(ev.scope)};margin-bottom:8px">
+                            <div class="event-list-info" style="flex:1">
+                                ${this.getScopeBadge(ev.scope)}
+                                <strong>${this.escapeHtml(ev.title)}</strong>
+                                ${ev.description ? `<div style="font-size:0.85rem;color:var(--gray-500);margin-top:4px">${this.escapeHtml(ev.description)}</div>` : ''}
+                                <div style="font-size:0.75rem;color:var(--gray-400);margin-top:4px">${this.escapeHtml(ev.author)} · ${this.formatDateTime(ev.createdAt)}</div>
+                            </div>
+                            ${canDelete ? `<button class="btn-icon" onclick="(async()=>{if(confirm('삭제하시겠습니까?')){await DataStore.deleteBoardEvent('${ev.id}');App.closeModal();App.renderBoard();App.toast('일정이 삭제되었습니다.','success');}})();" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>` : ''}
+                        </div>`;
+                    }).join('')}
+            </div>
+            ${canWrite ? `<div style="margin-top:16px;text-align:center">
+                <button class="btn btn-primary btn-sm" onclick="App.closeModal();App.showBoardEventForm('${dateStr}')"><i class="fas fa-plus"></i> 이 날짜에 일정 추가</button>
+            </div>` : ''}
+        `;
+        this.openModal(`${dateStr} 일정`, html);
+    },
+
+    // =========================================
     //  VIEW: MESSAGES (내부 소통)
     // =========================================
     renderMessages() {
+        const isStudent = this.currentUser && this.currentUser.role === 'student';
+        const isTeacher = this.currentUser && this.currentUser.role === 'teacher';
+        const isDirector = this.currentUser && this.currentUser.role === 'director';
+        const channel = this.msgChannel || 'internal';
+
+        // 학생은 업무공유 채널 접근 불가
+        if (isStudent && channel === 'team') {
+            this.msgChannel = 'internal';
+            return this.renderMessages();
+        }
+
+        const showTeamTab = isTeacher || isDirector;
+
+        const channelTabsHtml = showTeamTab ? `
+            <div class="msg-channel-tabs">
+                <button class="msg-channel-tab ${channel === 'internal' ? 'active' : ''}" onclick="App.switchMsgChannel('internal')">
+                    <i class="fas fa-envelope"></i> 내부 소통
+                </button>
+                <button class="msg-channel-tab ${channel === 'team' ? 'active' : ''}" onclick="App.switchMsgChannel('team')">
+                    <i class="fas fa-users-cog"></i> 업무 공유
+                    <span id="team-unread-badge" class="team-unread-badge" style="display:none"></span>
+                </button>
+            </div>
+        ` : '';
+
+        if (channel === 'team' && showTeamTab) {
+            this.renderTeamMessages(channelTabsHtml);
+            return;
+        }
+
         const students = DataStore.getStudents();
-        const messages = DataStore.getMessages();
+        let messages = DataStore.getMessages().filter(m => m.channel !== 'team');
+        // 선생님은 자신이 쓴 메시지 + 원장이 쓴 메시지만 볼 수 있음
+        if (isTeacher) {
+            messages = messages.filter(m => m.authorRole === 'director' || m.author === this.currentUser.name);
+        }
         const pinned = messages.filter(m => m.pinned);
         const regular = messages.filter(m => !m.pinned);
 
         const html = `
+            ${channelTabsHtml}
             <div class="toolbar">
                 <div class="toolbar-filters">
                     <select class="filter-select" id="filter-msg-role" onchange="App.filterMessages()">
                         <option value="">전체 작성자</option>
                         <option value="director">원장</option>
-                        <option value="teacher">선생님</option>
+                        ${!isTeacher ? '<option value="teacher">선생님</option>' : ''}
                     </select>
                     <select class="filter-select" id="filter-msg-student" onchange="App.filterMessages()">
                         <option value="">전체 학생</option>
@@ -2812,6 +3340,220 @@ const App = {
         `;
 
         document.getElementById('content-area').innerHTML = html;
+        this.updateTeamUnreadBadge();
+    },
+
+    switchMsgChannel(channel) {
+        this.msgChannel = channel;
+        this.renderMessages();
+    },
+
+    // 업무 공유 채널 렌더링
+    renderTeamMessages(channelTabsHtml) {
+        let messages = DataStore.getMessages().filter(m => m.channel === 'team');
+        const pinned = messages.filter(m => m.pinned);
+        const regular = messages.filter(m => !m.pinned);
+
+        const html = `
+            ${channelTabsHtml}
+            <div class="toolbar">
+                <div class="toolbar-filters">
+                    <span style="color:var(--gray-500);font-size:0.85rem"><i class="fas fa-info-circle"></i> 선생님 간 업무 공유 공간입니다. 담당 학생·개인정보는 공개되지 않습니다.</span>
+                    <span style="color:var(--gray-500);font-size:0.85rem">${messages.length}건</span>
+                </div>
+                <button class="btn btn-primary" data-action="add-team-message"><i class="fas fa-pen"></i> 업무 공유 글 작성</button>
+            </div>
+
+            ${pinned.length > 0 ? `
+            <div class="section-title" style="margin-top:4px"><i class="fas fa-thumbtack"></i> 고정 메시지</div>
+            <div id="pinned-messages">${this.renderTeamMessageCards(pinned)}</div>
+            <div class="section-title" style="margin-top:24px"><i class="fas fa-inbox"></i> 전체 메시지</div>
+            ` : ''}
+
+            <div id="messages-container">
+                ${this.renderTeamMessageCards(regular.length > 0 ? regular : (pinned.length > 0 ? [] : messages))}
+            </div>
+        `;
+
+        document.getElementById('content-area').innerHTML = html;
+        this.updateTeamUnreadBadge();
+    },
+
+    // 업무 공유 카드 렌더링 (이름 O, 담당학생/개인정보 X)
+    renderTeamMessageCards(messages) {
+        if (messages.length === 0) return '<div class="empty-state"><i class="fas fa-users-cog"></i><h3>업무 공유 메시지가 없습니다</h3><p>선생님들과 업무를 공유해보세요.</p></div>';
+        const isDirector = this.currentUser && this.currentUser.role === 'director';
+
+        return messages.map(msg => {
+            const readBy = msg.readBy || {};
+            const roleBadge = msg.authorRole === 'director'
+                ? '<span class="badge badge-danger">원장</span>'
+                : '<span class="badge badge-primary">선생님</span>';
+
+            // 확인 대상: 원장 + 승인된 선생님 전원
+            let readers = DataStore.getTeachers().filter(t => (t.role === 'teacher' || t.role === 'director') && t.approved !== false && t.name !== msg.author).map(t => t.name);
+            // 선생님은 본인의 확인 상태만 표시
+            if (!isDirector) {
+                readers = readers.filter(r => r === this.currentUser.name);
+            }
+
+            const canDelete = isDirector || msg.author === (this.currentUser && this.currentUser.name);
+            const canPin = isDirector;
+
+            return `<div class="msg-card team-msg-card ${msg.pinned ? 'msg-pinned' : ''}">
+                <div class="msg-card-header">
+                    <div class="msg-card-title-row">
+                        ${msg.pinned ? '<i class="fas fa-thumbtack" style="color:var(--warning);margin-right:6px;font-size:0.8rem"></i>' : ''}
+                        <span class="msg-author">${this.escapeHtml(msg.author)}</span>
+                        ${roleBadge}
+                        <span class="badge badge-info" style="font-size:0.7rem"><i class="fas fa-users-cog"></i> 업무공유</span>
+                        <span class="msg-date">${this.formatDateTime(msg.createdAt)}</span>
+                    </div>
+                    <div class="msg-card-actions">
+                        ${canPin ? `<button class="btn-icon" data-action="pin-message" data-message-id="${msg.id}" title="${msg.pinned ? '고정 해제' : '고정'}">
+                            <i class="fas fa-thumbtack" style="${msg.pinned ? 'color:var(--warning)' : ''}"></i>
+                        </button>` : ''}
+                        ${canDelete ? `<button class="btn-icon" data-action="delete-message" data-message-id="${msg.id}" title="삭제" style="color:var(--danger)">
+                            <i class="fas fa-trash"></i>
+                        </button>` : ''}
+                    </div>
+                </div>
+                <div class="msg-card-body" data-action="view-team-message-detail" data-message-id="${msg.id}" style="cursor:pointer">
+                    <h3 class="msg-title">${this.escapeHtml(msg.title)}</h3>
+                    <p class="msg-preview">${this.escapeHtml(msg.content).substring(0, 120)}${msg.content.length > 120 ? '...' : ''}</p>
+                </div>
+                ${readers.length > 0 ? `<div class="msg-card-footer">
+                    <div class="msg-read-section">
+                        <span class="msg-read-label"><i class="fas fa-check-double"></i> 확인:</span>
+                        ${readers.map(reader => {
+                            const isRead = !!readBy[reader];
+                            const readTime = isRead ? this.formatDateTime(readBy[reader]) : '';
+                            return `<label class="msg-read-check ${isRead ? 'checked' : ''}" title="${isRead ? readTime + ' 확인' : '미확인'}">
+                                <input type="checkbox" ${isRead ? 'checked' : ''}
+                                    data-action="toggle-read" data-message-id="${msg.id}" data-reader="${this.escapeHtml(reader)}"
+                                    onchange="App.handleContentClick(event)">
+                                <span class="msg-reader-name">${this.escapeHtml(reader)}</span>
+                                ${isRead ? '<i class="fas fa-check-circle msg-read-icon"></i>' : '<i class="far fa-circle msg-unread-icon"></i>'}
+                                ${isRead ? `<span class="msg-read-time">${readTime}</span>` : ''}
+                            </label>`;
+                        }).join('')}
+                    </div>
+                </div>` : ''}
+            </div>`;
+        }).join('');
+    },
+
+    // 업무 공유 상세 보기
+    showTeamMessageDetail(messageId) {
+        const msg = DataStore.getMessage(messageId);
+        if (!msg) return;
+        const readBy = msg.readBy || {};
+        const isDirector = this.currentUser && this.currentUser.role === 'director';
+
+        let readers = DataStore.getTeachers().filter(t => (t.role === 'teacher' || t.role === 'director') && t.approved !== false && t.name !== msg.author).map(t => t.name);
+        if (!isDirector) {
+            readers = readers.filter(r => r === this.currentUser.name);
+        }
+
+        const html = `
+            <div style="margin-bottom:16px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                    <span class="msg-author" style="font-size:1rem">${this.escapeHtml(msg.author)}</span>
+                    ${msg.authorRole === 'director' ? '<span class="badge badge-danger">원장</span>' : '<span class="badge badge-primary">선생님</span>'}
+                    <span class="badge badge-info"><i class="fas fa-users-cog"></i> 업무공유</span>
+                </div>
+                <div style="font-size:0.82rem;color:var(--gray-400);margin-bottom:16px">${this.formatDateTime(msg.createdAt)}</div>
+                <div style="background:var(--gray-50);padding:16px;border-radius:8px;font-size:0.93rem;line-height:1.8;color:var(--gray-700);white-space:pre-line">${this.escapeHtml(msg.content)}</div>
+            </div>
+            ${readers.length > 0 ? `<div style="border-top:1px solid var(--gray-200);padding-top:16px">
+                <h3 style="font-size:0.9rem;font-weight:600;color:var(--gray-700);margin-bottom:12px"><i class="fas fa-check-double" style="color:var(--primary)"></i> 확인 현황</h3>
+                <div class="msg-detail-readers">
+                    ${readers.map(reader => {
+                        const isRead = !!readBy[reader];
+                        return `<div class="msg-detail-reader ${isRead ? 'read' : 'unread'}">
+                            <label class="msg-read-check-detail">
+                                <input type="checkbox" ${isRead ? 'checked' : ''}
+                                    data-action="toggle-read" data-message-id="${msg.id}" data-reader="${this.escapeHtml(reader)}"
+                                    onchange="App.handleReadToggleInModal(this)">
+                                <span>${this.escapeHtml(reader)}</span>
+                            </label>
+                            <span class="msg-detail-status">
+                                ${isRead
+                                    ? `<i class="fas fa-check-circle" style="color:var(--success)"></i> ${this.formatDateTime(readBy[reader])} 확인`
+                                    : '<i class="far fa-circle" style="color:var(--gray-400)"></i> 미확인'}
+                            </span>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>` : ''}
+        `;
+
+        this.openModal(msg.title, html);
+    },
+
+    // 업무 공유 글 작성 폼
+    showTeamMessageForm() {
+        const user = this.currentUser;
+        const authorName = user ? user.name : '';
+        const authorRole = user ? user.role : 'teacher';
+
+        const html = `
+            <form id="team-message-form">
+                <div class="form-group">
+                    <label>작성자</label>
+                    <input type="text" class="form-control" name="author" required value="${this.escapeHtml(authorName)}" readonly style="background:var(--gray-50)">
+                </div>
+                <div class="form-group">
+                    <label>제목 <span class="required">*</span></label>
+                    <input type="text" class="form-control" name="title" required placeholder="업무 공유 제목">
+                </div>
+                <div class="form-group">
+                    <label>내용 <span class="required">*</span></label>
+                    <textarea class="form-control" name="content" rows="6" required placeholder="선생님들과 공유할 업무 내용을 작성하세요.\n(담당 학생 정보는 노출되지 않으니 안심하세요)"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="App.closeModal()">취소</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> 공유하기</button>
+                </div>
+            </form>
+        `;
+
+        this.openModal('업무 공유 글 작성', html);
+
+        document.getElementById('team-message-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            try {
+                await DataStore.addMessage({
+                    author: form.author.value.trim(),
+                    authorRole: authorRole,
+                    studentId: null,
+                    title: form.title.value.trim(),
+                    content: form.content.value.trim(),
+                    pinned: false,
+                    channel: 'team'
+                });
+                this.toast('업무 공유 글이 등록되었습니다.', 'success');
+                this.closeModal();
+                this.renderMessages();
+                this.updateUnreadBadge();
+            } catch(err) { this.toast('전송 실패: ' + err.message, 'error'); }
+        });
+    },
+
+    // 업무 공유 채널 안읽은 메시지 배지 업데이트
+    updateTeamUnreadBadge() {
+        const badge = document.getElementById('team-unread-badge');
+        if (!badge || !this.currentUser) return;
+        const teamMsgs = DataStore.getMessages().filter(m => m.channel === 'team');
+        const userName = this.currentUser.name;
+        const unread = teamMsgs.filter(m => m.author !== userName && !(m.readBy && m.readBy[userName])).length;
+        if (unread > 0) {
+            badge.textContent = unread;
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
+        }
     },
 
     renderMessageCards(messages) {
@@ -2825,10 +3567,14 @@ const App = {
                 ? '<span class="badge badge-danger">원장</span>'
                 : '<span class="badge badge-primary">선생님</span>';
 
-            const readers = msg.authorRole === 'director'
+            let readers = msg.authorRole === 'director'
                 ? DataStore.getTeachers().filter(t => t.role === 'teacher' && t.approved).map(t => t.name)
                 : DataStore.getTeachers().filter(t => t.role === 'director').map(t => t.name);
             if (readers.length === 0) readers.push(msg.authorRole === 'director' ? '선생님' : '원장');
+            // 선생님은 다른 선생님의 확인 현황을 볼 수 없음 (본인만 표시)
+            if (App.currentUser && App.currentUser.role === 'teacher') {
+                readers = readers.filter(r => r === App.currentUser.name);
+            }
 
             return `<div class="msg-card ${msg.pinned ? 'msg-pinned' : ''}">
                 <div class="msg-card-header">
@@ -2877,7 +3623,11 @@ const App = {
         const role = document.getElementById('filter-msg-role').value;
         const studentVal = document.getElementById('filter-msg-student').value;
 
-        let messages = DataStore.getMessages();
+        let messages = DataStore.getMessages().filter(m => m.channel !== 'team');
+        // 선생님은 자신이 쓴 메시지 + 원장이 쓴 메시지만 볼 수 있음
+        if (this.currentUser && this.currentUser.role === 'teacher') {
+            messages = messages.filter(m => m.authorRole === 'director' || m.author === this.currentUser.name);
+        }
         if (role) messages = messages.filter(m => m.authorRole === role);
         if (studentVal === '__none__') messages = messages.filter(m => !m.studentId);
         else if (studentVal) messages = messages.filter(m => m.studentId === studentVal);
@@ -2897,10 +3647,14 @@ const App = {
         const student = msg.studentId ? DataStore.getStudent(msg.studentId) : null;
         const readBy = msg.readBy || {};
 
-        const readers = msg.authorRole === 'director'
+        let readers = msg.authorRole === 'director'
             ? DataStore.getTeachers().filter(t => t.role === 'teacher' && t.approved).map(t => t.name)
             : DataStore.getTeachers().filter(t => t.role === 'director').map(t => t.name);
         if (readers.length === 0) readers.push(msg.authorRole === 'director' ? '선생님' : '원장');
+        // 선생님은 다른 선생님의 확인 현황을 볼 수 없음 (본인만 표시)
+        if (this.currentUser && this.currentUser.role === 'teacher') {
+            readers = readers.filter(r => r === this.currentUser.name);
+        }
 
         const html = `
             <div style="margin-bottom:16px">
@@ -2943,7 +3697,12 @@ const App = {
         const reader = checkbox.dataset.reader;
         try { await DataStore.toggleReadBy(messageId, reader); } catch(err) { this.toast('서버 저장 실패: ' + err.message, 'error'); }
         this.updateUnreadBadge();
-        this.showMessageDetail(messageId);
+        const msg = DataStore.getMessage(messageId);
+        if (msg && msg.channel === 'team') {
+            this.showTeamMessageDetail(messageId);
+        } else {
+            this.showMessageDetail(messageId);
+        }
         if (this.currentView === 'messages') this.renderMessages();
     },
 
@@ -2962,10 +3721,11 @@ const App = {
                     </div>
                     <div class="form-group">
                         <label>역할</label>
-                        <select class="form-control" name="authorRole" required>
+                        <select class="form-control" name="authorRole" required ${authorRole === 'teacher' ? 'disabled' : ''}>
                             <option value="director" ${authorRole === 'director' ? 'selected' : ''}>원장</option>
                             <option value="teacher" ${authorRole === 'teacher' ? 'selected' : ''}>선생님</option>
                         </select>
+                        ${authorRole === 'teacher' ? '<input type="hidden" name="authorRole" value="teacher">' : ''}
                     </div>
                 </div>
                 <div class="form-group">

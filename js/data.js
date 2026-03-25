@@ -9,7 +9,9 @@ const DataStore = {
         COMMENTS: 'comments',
         MESSAGES: 'messages',
         TEACHERS: 'teachers',
-        GRADES: 'grades'
+        GRADES: 'grades',
+        BOARD_POSTS: 'board_posts',
+        BOARD_EVENTS: 'board_events'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -21,7 +23,9 @@ const DataStore = {
         comments: [],
         messages: [],
         teachers: [],
-        grades: []
+        grades: [],
+        board_posts: [],
+        board_events: []
     },
 
     _syncEnabled: true,
@@ -528,6 +532,29 @@ const DataStore = {
                 return !recipients.includes('student');
             })
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
+    // === BOARD POSTS (학원 게시판) ===
+    getBoardPosts() {
+        return this._getAll(this.TABLES.BOARD_POSTS).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    getBoardPost(id) { return this._getById(this.TABLES.BOARD_POSTS, id); },
+    async addBoardPost(post) { return await this._add(this.TABLES.BOARD_POSTS, post); },
+    async updateBoardPost(id, updates) { return await this._update(this.TABLES.BOARD_POSTS, id, updates); },
+    async deleteBoardPost(id) { return await this._delete(this.TABLES.BOARD_POSTS, id); },
+
+    // === BOARD EVENTS (학원 일정) ===
+    getBoardEvents() {
+        return this._getAll(this.TABLES.BOARD_EVENTS).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    },
+    getBoardEvent(id) { return this._getById(this.TABLES.BOARD_EVENTS, id); },
+    async addBoardEvent(event) { return await this._add(this.TABLES.BOARD_EVENTS, event); },
+    async updateBoardEvent(id, updates) { return await this._update(this.TABLES.BOARD_EVENTS, id, updates); },
+    async deleteBoardEvent(id) { return await this._delete(this.TABLES.BOARD_EVENTS, id); },
+
+    getEventsForMonth(year, month) {
+        const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+        return this.getBoardEvents().filter(e => (e.date || '').startsWith(prefix));
     },
 
 };

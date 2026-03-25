@@ -138,3 +138,36 @@ CREATE POLICY "Allow all access" ON teachers FOR ALL USING (true) WITH CHECK (tr
 
 ALTER TABLE grades ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all access" ON grades FOR ALL USING (true) WITH CHECK (true);
+
+-- 8. 게시판 테이블
+CREATE TABLE board_posts (
+    id TEXT PRIMARY KEY,
+    author TEXT DEFAULT '',
+    author_role TEXT DEFAULT '',
+    author_id TEXT DEFAULT '',
+    scope TEXT DEFAULT 'all',
+    title TEXT DEFAULT '',
+    content TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+
+-- 9. 학원 일정 테이블
+CREATE TABLE board_events (
+    id TEXT PRIMARY KEY,
+    date TEXT DEFAULT '',
+    scope TEXT DEFAULT 'all',
+    title TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    author TEXT DEFAULT '',
+    author_role TEXT DEFAULT '',
+    author_id TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+
+ALTER TABLE board_posts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all access" ON board_posts FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE board_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all access" ON board_events FOR ALL USING (true) WITH CHECK (true);
