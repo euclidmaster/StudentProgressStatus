@@ -4115,8 +4115,8 @@ const App = {
         const isStudent = role === 'student';
         const isParent = role === 'parent';
 
-        const DAYS = ['월', '화', '수', '목', '금', '토'];
-        const DAY_COLORS = { '월': '#4F46E5', '화': '#10B981', '수': '#F59E0B', '목': '#EF4444', '금': '#8B5CF6', '토': '#06B6D4' };
+        const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+        const DAY_COLORS = { '월': '#4F46E5', '화': '#10B981', '수': '#F59E0B', '목': '#EF4444', '금': '#8B5CF6', '토': '#06B6D4', '일': '#EC4899' };
 
         // 역할별 시간표 필터
         let schedules;
