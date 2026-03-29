@@ -413,7 +413,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', report: '월간 리포트', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -433,6 +433,7 @@ const App = {
             'tasks':          [],
             'attendance':     [T.ATTENDANCE],
             'homework':       [T.HOMEWORK],
+            'report':         [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.GRADES, T.COMMENTS],
             'teachers':       [],
         };
 
@@ -462,6 +463,7 @@ const App = {
             case 'tasks': this.renderTasks(); break;
             case 'attendance': this.renderAttendance(); break;
             case 'homework': this.renderHomework(); break;
+            case 'report': this.renderReport(data.studentId, data.ym); break;
             case 'teachers': this.renderTeachers(); break;
         }
     },
@@ -2896,6 +2898,22 @@ const App = {
                 this.showDateEvents(target.dataset.date || target.closest('[data-date]').dataset.date);
                 break;
 
+            // 월간 리포트 actions
+            case 'report-prev-month': {
+                const [ry, rm] = (this._reportYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
+                const prev = new Date(ry, rm - 2, 1);
+                this._reportYM = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+                this.renderReport(this._reportStudentId, this._reportYM);
+                break;
+            }
+            case 'report-next-month': {
+                const [ry, rm] = (this._reportYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
+                const next = new Date(ry, rm, 1);
+                this._reportYM = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`;
+                this.renderReport(this._reportStudentId, this._reportYM);
+                break;
+            }
+
             // 숙제 관리 actions
             case 'add-homework': {
                 const title = (document.getElementById('hw-title') || {}).value || '';
@@ -3172,6 +3190,311 @@ const App = {
             }
         } else {
             badge.style.display = 'none';
+        }
+    },
+
+    // =========================================
+    //  VIEW: REPORT (월간 학습 리포트)
+    // =========================================
+    renderReport(studentId, ym) {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const isStudent = role === 'student';
+        const today = this.getLocalDateStr();
+        const currentYM = this._reportYM || today.slice(0, 7);
+        this._reportYM = ym || currentYM;
+        const reportYM = this._reportYM;
+        const [year, month] = reportYM.split('-').map(Number);
+
+        // 학생 선택 처리
+        const students = this.getVisibleStudents();
+        if (!studentId) {
+            if (isStudent) {
+                studentId = this.currentUser.studentId;
+            } else if (this._reportStudentId) {
+                studentId = this._reportStudentId;
+            } else if (students.length > 0) {
+                studentId = students[0].id;
+            }
+        }
+        this._reportStudentId = studentId;
+
+        const student = studentId ? DataStore.getStudent(studentId) : null;
+
+        // 학생 선택 드롭다운 (선생/원장만)
+        const studentSelector = (!isStudent && students.length > 0) ? `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label style="font-weight:600;white-space:nowrap">학생 선택</label>
+            <select id="report-student-select" class="form-control" style="max-width:200px">
+                ${students.map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
+            </select>
+        </div>` : '';
+
+        // 월 이동 컨트롤
+        const monthNav = `
+        <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn btn-outline btn-sm" data-action="report-prev-month"><i class="fas fa-chevron-left"></i></button>
+            <strong style="font-size:1rem;min-width:90px;text-align:center">${year}년 ${month}월</strong>
+            <button class="btn btn-outline btn-sm" data-action="report-next-month"><i class="fas fa-chevron-right"></i></button>
+        </div>`;
+
+        // 컨트롤 바
+        const controlBar = `
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                ${studentSelector}
+                ${monthNav}
+            </div>
+        </div>`;
+
+        if (!student) {
+            document.getElementById('content-area').innerHTML = controlBar +
+                '<div class="empty-state" style="padding:60px"><i class="fas fa-user-slash"></i><h3>학생을 선택해주세요</h3></div>';
+            this._bindReportEvents();
+            return;
+        }
+
+        // ── 데이터 집계 ──────────────────────────────
+
+        // 1. 학습 계획 & 진도 (해당 월에 active인 계획)
+        const plans = DataStore.getStudentPlans(student.id).filter(p =>
+            (!p.endDate || p.endDate >= `${reportYM}-01`) &&
+            (!p.startDate || p.startDate <= `${reportYM}-31`)
+        );
+        const monthProgress = DataStore.getStudentProgress(student.id)
+            .filter(pr => (pr.date || '').startsWith(reportYM));
+        const progressByPlan = {};
+        monthProgress.forEach(pr => {
+            progressByPlan[pr.planId] = (progressByPlan[pr.planId] || 0) + (pr.amount || 0);
+        });
+
+        // 2. 출석
+        const attStats = DataStore.getAttendanceStats(student.id, reportYM);
+
+        // 3. 숙제
+        const hwAll = DataStore.getHomeworkForStudent(student.id).filter(h =>
+            !h.dueDate || h.dueDate.startsWith(reportYM) ||
+            (h.createdAt && h.createdAt.startsWith(reportYM))
+        );
+        const hwDone = hwAll.filter(h => DataStore.isHomeworkCompletedBy(h, student.id)).length;
+
+        // 4. 성적 (해당 월)
+        const monthGrades = DataStore.getStudentGrades(student.id).filter(g =>
+            g.examDate && g.examDate.startsWith(reportYM)
+        );
+
+        // 5. 코멘트 (해당 월, 본인 열람 가능한 것)
+        const monthComments = DataStore.getStudentComments(student.id)
+            .filter(c => (c.createdAt || '').startsWith(reportYM) && Permissions.canViewComment(c));
+
+        // 6. 자기 진도 일지 (해당 월)
+        const selfJournals = DataStore.getSelfJournals(student.id)
+            .filter(j => (j.date || '').startsWith(reportYM));
+
+        // ── 렌더링 ────────────────────────────────────
+
+        // 학습 계획 섹션
+        const planSection = plans.length === 0
+            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 진행 중인 학습 계획이 없습니다.</div>'
+            : plans.map(p => {
+                const total = p.totalUnits || 0;
+                const completed = p.completedUnits || 0;
+                const rate = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+                const monthAmt = progressByPlan[p.id] || 0;
+                const barColor = rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warning)' : 'var(--primary)';
+                return `
+                <div class="report-plan-row">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px">
+                        <span style="font-weight:600">${this.escapeHtml(p.subject)} <span style="font-weight:400;color:var(--gray-500)">— ${this.escapeHtml(p.textbook || '')}</span></span>
+                        <span style="font-size:0.82rem;color:var(--gray-500)">이번 달 +${monthAmt}${this.escapeHtml(p.unitLabel || '')} &nbsp; 누적 ${completed}/${total}</span>
+                    </div>
+                    <div style="background:var(--gray-100);border-radius:6px;height:10px;overflow:hidden">
+                        <div style="width:${rate}%;background:${barColor};height:100%;border-radius:6px;transition:width 0.5s"></div>
+                    </div>
+                    <div style="text-align:right;font-size:0.78rem;margin-top:2px;color:${barColor};font-weight:600">${rate}%</div>
+                </div>`;
+            }).join('');
+
+        // 성적 섹션
+        const gradeSection = monthGrades.length === 0
+            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 시험 기록이 없습니다.</div>'
+            : monthGrades.map(g => {
+                const subRows = (g.subjects || []).map(s =>
+                    `<span class="report-subject-chip">
+                        ${this.escapeHtml(s.subject)}&nbsp;
+                        <strong class="grade-score ${s.score >= 90 ? 'high' : s.score >= 70 ? 'mid' : 'low'}">${s.score}</strong>
+                        ${s.grade ? `<span class="grade-badge grade-${s.grade}" style="font-size:0.68rem">${s.grade}등급</span>` : ''}
+                     </span>`
+                ).join('');
+                return `<div style="margin-bottom:10px">
+                    <div style="font-weight:600;margin-bottom:4px">${this.escapeHtml(g.examName || g.examType || '')} <span style="font-size:0.78rem;color:var(--gray-400)">${g.examDate}</span></div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px">${subRows}</div>
+                    ${g.totalAvg ? `<div style="margin-top:4px;font-size:0.82rem;color:var(--gray-500)">평균 <strong>${g.totalAvg}</strong>${g.totalRank ? ` / 석차 ${this.escapeHtml(g.totalRank)}` : ''}</div>` : ''}
+                </div>`;
+            }).join('');
+
+        // 코멘트 섹션
+        const commentSection = monthComments.length === 0
+            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 코멘트가 없습니다.</div>'
+            : monthComments.map(c => `
+            <div style="padding:10px 0;border-bottom:1px solid var(--gray-100)">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+                    <span style="font-weight:600;font-size:0.88rem">${this.escapeHtml(c.author)}</span>
+                    ${this.getRoleBadge(c.authorRole)}
+                    <span style="font-size:0.75rem;color:var(--gray-400)">${this.formatDateTime(c.createdAt)}</span>
+                </div>
+                <div style="font-size:0.88rem;color:var(--gray-700);white-space:pre-line">${this.escapeHtml(c.content)}</div>
+            </div>`).join('');
+
+        // 자기 진도 일지 요약
+        const journalSection = selfJournals.length === 0
+            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 자기 진도 기록이 없습니다.</div>'
+            : `<div style="font-size:0.85rem;color:var(--gray-600)">총 <strong>${selfJournals.length}회</strong> 기록</div>
+               <div style="margin-top:8px;max-height:140px;overflow-y:auto">
+               ${selfJournals.map(j => `
+               <div style="padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.83rem">
+                   <span style="color:var(--gray-400);margin-right:8px">${j.date}</span>
+                   <span>${this.escapeHtml(j.note || '')}</span>
+               </div>`).join('')}
+               </div>`;
+
+        // 요약 통계 카드
+        const totalMonthProgress = Object.values(progressByPlan).reduce((a, b) => a + b, 0);
+        const avgPlanRate = plans.length > 0
+            ? Math.round(plans.reduce((sum, p) => sum + (p.totalUnits > 0 ? Math.min(100, Math.round((p.completedUnits / p.totalUnits) * 100)) : 0), 0) / plans.length)
+            : null;
+
+        const summaryCards = `
+        <div class="report-summary-grid">
+            <div class="report-stat-card">
+                <div class="report-stat-icon" style="background:#EEF2FF;color:#4F46E5"><i class="fas fa-book-open"></i></div>
+                <div class="report-stat-body">
+                    <div class="report-stat-label">이번 달 진도량</div>
+                    <div class="report-stat-value">${totalMonthProgress}<span style="font-size:0.8rem;font-weight:400"> 회</span></div>
+                </div>
+            </div>
+            <div class="report-stat-card">
+                <div class="report-stat-icon" style="background:#F0FDF4;color:#16A34A"><i class="fas fa-chart-line"></i></div>
+                <div class="report-stat-body">
+                    <div class="report-stat-label">계획 달성률</div>
+                    <div class="report-stat-value">${avgPlanRate !== null ? avgPlanRate + '%' : '-'}</div>
+                </div>
+            </div>
+            <div class="report-stat-card">
+                <div class="report-stat-icon" style="background:#FFF7ED;color:#EA580C"><i class="fas fa-calendar-check"></i></div>
+                <div class="report-stat-body">
+                    <div class="report-stat-label">출석률</div>
+                    <div class="report-stat-value">${attStats.rate !== null ? attStats.rate + '%' : '-'}</div>
+                </div>
+            </div>
+            <div class="report-stat-card">
+                <div class="report-stat-icon" style="background:#FFF1F2;color:#E11D48"><i class="fas fa-tasks"></i></div>
+                <div class="report-stat-body">
+                    <div class="report-stat-label">숙제 완료율</div>
+                    <div class="report-stat-value">${hwAll.length > 0 ? Math.round((hwDone / hwAll.length) * 100) + '%' : '-'}</div>
+                </div>
+            </div>
+        </div>`;
+
+        const html = controlBar + `
+        <!-- 학생 헤더 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="padding:20px 24px">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+                    <div>
+                        <div style="font-size:1.3rem;font-weight:700;color:var(--gray-800)">${this.escapeHtml(student.name)}</div>
+                        <div style="font-size:0.88rem;color:var(--gray-500);margin-top:2px">${this.escapeHtml(student.grade || '')} · ${this.escapeHtml(student.school || '')}</div>
+                    </div>
+                    <div style="font-size:1.1rem;font-weight:600;color:var(--primary)">${year}년 ${month}월 학습 리포트</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 요약 통계 -->
+        ${summaryCards}
+
+        <div class="report-grid">
+            <!-- 학습 계획 진행 -->
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-book-open" style="color:var(--primary)"></i> 학습 계획 진행 현황 (${plans.length}개)</h2></div>
+                <div class="card-body">${planSection}</div>
+            </div>
+
+            <!-- 출석 현황 -->
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-calendar-check" style="color:var(--success)"></i> 출석 현황</h2></div>
+                <div class="card-body">
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;text-align:center;margin-bottom:12px">
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--success)">${attStats['출석']}</div><div style="font-size:0.78rem;color:var(--gray-400)">출석</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--danger)">${attStats['결석']}</div><div style="font-size:0.78rem;color:var(--gray-400)">결석</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--warning)">${attStats['지각']}</div><div style="font-size:0.78rem;color:var(--gray-400)">지각</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--info)">${attStats['조퇴']}</div><div style="font-size:0.78rem;color:var(--gray-400)">조퇴</div></div>
+                    </div>
+                    ${attStats.rate !== null ? `
+                    <div style="background:var(--gray-100);border-radius:8px;height:12px;overflow:hidden;margin-bottom:4px">
+                        <div style="width:${attStats.rate}%;background:${attStats.rate >= 90 ? 'var(--success)' : attStats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'};height:100%;border-radius:8px"></div>
+                    </div>
+                    <div style="text-align:right;font-size:0.82rem;font-weight:700;color:${attStats.rate >= 90 ? 'var(--success)' : attStats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'}">출석률 ${attStats.rate}%</div>
+                    ` : '<div style="color:var(--gray-300);padding:12px 0">출석 데이터가 없습니다.</div>'}
+                </div>
+            </div>
+
+            <!-- 숙제 완료 현황 -->
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-tasks" style="color:var(--warning)"></i> 숙제 완료 현황 (${hwAll.length}개)</h2></div>
+                <div class="card-body">
+                    ${hwAll.length === 0
+                        ? '<div style="color:var(--gray-300)">이번 달 숙제가 없습니다.</div>'
+                        : `<div style="display:flex;align-items:center;gap:16px;margin-bottom:10px">
+                            <div style="font-size:2rem;font-weight:700;color:var(--success)">${hwDone}</div>
+                            <div style="font-size:1rem;color:var(--gray-400)">/ ${hwAll.length}</div>
+                            <div style="flex:1">
+                                <div style="background:var(--gray-100);border-radius:6px;height:10px;overflow:hidden">
+                                    <div style="width:${Math.round((hwDone/hwAll.length)*100)}%;background:var(--success);height:100%;border-radius:6px"></div>
+                                </div>
+                                <div style="text-align:right;font-size:0.78rem;color:var(--success);font-weight:700;margin-top:2px">${Math.round((hwDone/hwAll.length)*100)}%</div>
+                            </div>
+                           </div>
+                           <div style="font-size:0.82rem">
+                           ${hwAll.map(h => `
+                           <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--gray-100)">
+                               <i class="fas ${DataStore.isHomeworkCompletedBy(h, student.id) ? 'fa-check-circle' : 'fa-circle'}" style="color:${DataStore.isHomeworkCompletedBy(h, student.id) ? 'var(--success)' : 'var(--gray-200)'}"></i>
+                               <span style="${DataStore.isHomeworkCompletedBy(h, student.id) ? 'text-decoration:line-through;color:var(--gray-400)' : ''}">${this.escapeHtml(h.title)}</span>
+                               ${h.dueDate ? `<span style="margin-left:auto;font-size:0.75rem;color:var(--gray-400)">${h.dueDate}</span>` : ''}
+                           </div>`).join('')}
+                           </div>`}
+                </div>
+            </div>
+
+            <!-- 시험 성적 -->
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-trophy" style="color:var(--warning)"></i> 이번 달 시험 성적</h2></div>
+                <div class="card-body">${gradeSection}</div>
+            </div>
+
+            <!-- 자기 진도 일지 -->
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-pencil-alt" style="color:var(--info)"></i> 자기 진도 일지 (${selfJournals.length}회)</h2></div>
+                <div class="card-body">${journalSection}</div>
+            </div>
+
+            <!-- 코멘트 -->
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-comments" style="color:var(--primary)"></i> 코멘트 (${monthComments.length}개)</h2></div>
+                <div class="card-body" style="padding:${monthComments.length ? '8px 20px' : ''}">${commentSection}</div>
+            </div>
+        </div>`;
+
+        document.getElementById('content-area').innerHTML = html;
+        this._bindReportEvents();
+    },
+
+    _bindReportEvents() {
+        const sel = document.getElementById('report-student-select');
+        if (sel) {
+            sel.addEventListener('change', () => {
+                this._reportStudentId = sel.value;
+                this.renderReport(sel.value, this._reportYM);
+            });
         }
     },
 

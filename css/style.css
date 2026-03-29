@@ -2295,6 +2295,72 @@ th.sortable i {
 .att-status-btn:hover { background: var(--gray-100); }
 .att-status-btn.active { font-weight: 600; }
 
+/* ===== 월간 리포트 ===== */
+.report-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+@media (max-width: 900px) { .report-summary-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 500px) { .report-summary-grid { grid-template-columns: 1fr 1fr; } }
+
+.report-stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-100);
+}
+.report-stat-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.report-stat-label {
+    font-size: 0.75rem;
+    color: var(--gray-400);
+    margin-bottom: 2px;
+}
+.report-stat-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--gray-800);
+    line-height: 1;
+}
+.report-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+@media (max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
+
+.report-plan-row {
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--gray-100);
+}
+.report-plan-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.report-subject-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-100);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.82rem;
+}
+
 /* ===== 숙제 관리 ===== */
 .hw-item {
     display: flex;
