@@ -157,13 +157,6 @@ const Permissions = {
         return this.canEditStudent(studentId);
     },
 
-    /**
-     * 진도 입력 가능 여부
-     */
-    canAddProgress(studentId) {
-        return this.canEditStudent(studentId);
-    },
-
     // ==========================================
     //  코멘트 권한 (핵심 로직)
     // ==========================================

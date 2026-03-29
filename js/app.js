@@ -2778,32 +2778,36 @@ const App = {
 
         this.openModal('담당 선생님 지정', html);
 
-        document.getElementById('assignment-form').addEventListener('submit', (e) => {
+        document.getElementById('assignment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const selectedIds = [...form.querySelectorAll('input[name="teacherIds"]:checked')].map(cb => cb.value);
 
-            // Update all teachers: add/remove this student
-            teachers.forEach(t => {
-                const hasStudent = (t.assignedStudentIds || []).includes(studentId);
-                const shouldHave = selectedIds.includes(t.id);
-                if (shouldHave && !hasStudent) {
-                    DataStore.assignStudentToTeacher(t.id, studentId);
-                } else if (!shouldHave && hasStudent) {
-                    DataStore.unassignStudentFromTeacher(t.id, studentId);
+            try {
+                // Update all teachers: add/remove this student
+                for (const t of teachers) {
+                    const hasStudent = (t.assignedStudentIds || []).includes(studentId);
+                    const shouldHave = selectedIds.includes(t.id);
+                    if (shouldHave && !hasStudent) {
+                        await DataStore.assignStudentToTeacher(t.id, studentId);
+                    } else if (!shouldHave && hasStudent) {
+                        await DataStore.unassignStudentFromTeacher(t.id, studentId);
+                    }
                 }
-            });
 
-            // Also update director's list
-            const director = DataStore.getTeachers().find(t => t.role === 'director');
-            if (director && !(director.assignedStudentIds || []).includes(studentId)) {
-                DataStore.assignStudentToTeacher(director.id, studentId);
+                // Also update director's list
+                const director = DataStore.getTeachers().find(t => t.role === 'director');
+                if (director && !(director.assignedStudentIds || []).includes(studentId)) {
+                    await DataStore.assignStudentToTeacher(director.id, studentId);
+                }
+
+                this.toast('담당 선생님이 변경되었습니다.', 'success');
+                this.closeModal();
+                if (this.currentView === 'teachers') this.renderTeachers();
+                else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+            } catch(err) {
+                this.toast('저장 실패: ' + err.message, 'error');
             }
-
-            this.toast('담당 선생님이 변경되었습니다.', 'success');
-            this.closeModal();
-            if (this.currentView === 'teachers') this.renderTeachers();
-            else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
         });
     },
 
@@ -3311,7 +3315,7 @@ const App = {
                                 ${ev.description ? `<div style="font-size:0.85rem;color:var(--gray-500);margin-top:4px">${this.escapeHtml(ev.description)}</div>` : ''}
                                 <div style="font-size:0.75rem;color:var(--gray-400);margin-top:4px">${this.escapeHtml(ev.author)} · ${this.formatDateTime(ev.createdAt)}</div>
                             </div>
-                            ${canDelete ? `<button class="btn-icon" onclick="(async()=>{if(confirm('삭제하시겠습니까?')){await DataStore.deleteBoardEvent('${ev.id}');App.closeModal();App.renderBoard();App.toast('일정이 삭제되었습니다.','success');}})();" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>` : ''}
+                            ${canDelete ? `<button class="btn-icon" onclick="(async()=>{if(confirm('삭제하시겠습니까?')){try{await DataStore.deleteBoardEvent('${ev.id}');App.closeModal();App.renderBoard();App.toast('일정이 삭제되었습니다.','success');}catch(err){App.toast('삭제 실패: '+err.message,'error');}}})();" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>` : ''}
                         </div>`;
                     }).join('')}
             </div>

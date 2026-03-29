@@ -103,19 +103,17 @@ const DataStore = {
         this._cache[table].push(item);
 
         if (this._syncEnabled) {
+            let supabaseError;
             try {
                 const { error } = await supabaseClient.from(table).insert(this._objToSnake(item));
-                if (error) {
-                    console.error(`[Supabase] ${table} 삽입 오류:`, error);
-                    this._cache[table] = this._cache[table].filter(i => i.id !== item.id);
-                    throw new Error(error.message);
-                }
+                supabaseError = error;
             } catch (err) {
-                if (err.message && !err.message.includes('삽입')) {
-                    console.error(`[Supabase] ${table} 네트워크 오류:`, err);
-                    this._cache[table] = this._cache[table].filter(i => i.id !== item.id);
-                }
-                throw err;
+                supabaseError = err;
+            }
+            if (supabaseError) {
+                console.error(`[Supabase] ${table} 삽입 오류:`, supabaseError);
+                this._cache[table] = this._cache[table].filter(i => i.id !== item.id);
+                throw new Error(supabaseError.message || String(supabaseError));
             }
         }
         return item;
@@ -130,19 +128,17 @@ const DataStore = {
         items[idx] = { ...items[idx], ...updates };
 
         if (this._syncEnabled) {
+            let supabaseError;
             try {
                 const { error } = await supabaseClient.from(table).update(this._objToSnake(updates)).eq('id', id);
-                if (error) {
-                    console.error(`[Supabase] ${table} 수정 오류:`, error);
-                    items[idx] = backup;
-                    throw new Error(error.message);
-                }
+                supabaseError = error;
             } catch (err) {
-                if (err.message && !err.message.includes('수정')) {
-                    console.error(`[Supabase] ${table} 네트워크 오류:`, err);
-                    items[idx] = backup;
-                }
-                throw err;
+                supabaseError = err;
+            }
+            if (supabaseError) {
+                console.error(`[Supabase] ${table} 수정 오류:`, supabaseError);
+                items[idx] = backup;
+                throw new Error(supabaseError.message || String(supabaseError));
             }
         }
         return items[idx];
@@ -156,19 +152,17 @@ const DataStore = {
         this._cache[table] = filtered;
 
         if (this._syncEnabled && deleted) {
+            let supabaseError;
             try {
                 const { error } = await supabaseClient.from(table).delete().eq('id', id);
-                if (error) {
-                    console.error(`[Supabase] ${table} 삭제 오류:`, error);
-                    if (deletedItem) this._cache[table].push(deletedItem);
-                    throw new Error(error.message);
-                }
+                supabaseError = error;
             } catch (err) {
-                if (err.message && !err.message.includes('삭제')) {
-                    console.error(`[Supabase] ${table} 네트워크 오류:`, err);
-                    if (deletedItem) this._cache[table].push(deletedItem);
-                }
-                throw err;
+                supabaseError = err;
+            }
+            if (supabaseError) {
+                console.error(`[Supabase] ${table} 삭제 오류:`, supabaseError);
+                if (deletedItem) this._cache[table].push(deletedItem);
+                throw new Error(supabaseError.message || String(supabaseError));
             }
         }
         return deleted;
