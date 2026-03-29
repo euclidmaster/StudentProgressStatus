@@ -374,3 +374,25 @@ CREATE TABLE IF NOT EXISTS tuition (
 ALTER TABLE tuition ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon_all" ON tuition;
 CREATE POLICY "anon_all" ON tuition FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- 마이그레이션: 시간표 관리 테이블 추가
+-- 아래 SQL을 Supabase SQL Editor에서 실행하세요
+-- ============================================
+CREATE TABLE IF NOT EXISTS schedules (
+    id TEXT PRIMARY KEY,
+    day_of_week TEXT NOT NULL,      -- '월' | '화' | '수' | '목' | '금' | '토'
+    start_time TEXT NOT NULL,       -- 'HH:MM'
+    end_time TEXT NOT NULL,
+    subject TEXT DEFAULT '',
+    teacher_id TEXT DEFAULT '',
+    teacher_name TEXT DEFAULT '',
+    student_ids JSONB DEFAULT '[]',
+    room TEXT DEFAULT '',
+    color TEXT DEFAULT '#4F46E5',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all" ON schedules;
+CREATE POLICY "anon_all" ON schedules FOR ALL TO anon USING (true) WITH CHECK (true);

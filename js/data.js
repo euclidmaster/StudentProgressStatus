@@ -16,7 +16,8 @@ const DataStore = {
         HOMEWORK: 'homework',
         EXAM_PLANS: 'exam_plans',
         CONSULTATIONS: 'consultations',
-        TUITION: 'tuition'
+        TUITION: 'tuition',
+        SCHEDULES: 'schedules'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -35,7 +36,8 @@ const DataStore = {
         homework: [],
         exam_plans: [],
         consultations: [],
-        tuition: []
+        tuition: [],
+        schedules: []
     },
 
     _syncEnabled: true,
@@ -806,6 +808,31 @@ const DataStore = {
 
     async addConsultation(record) { return await this._add(this.TABLES.CONSULTATIONS, record); },
     async deleteConsultation(id) { return await this._delete(this.TABLES.CONSULTATIONS, id); },
+
+    // === SCHEDULES (시간표 관리) ===
+    getSchedules() {
+        return this._getAll(this.TABLES.SCHEDULES)
+            .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    },
+
+    getSchedulesByDay(day) {
+        return this.getSchedules().filter(s => s.dayOfWeek === day);
+    },
+
+    getStudentSchedules(studentId) {
+        return this.getSchedules().filter(s => {
+            const ids = s.studentIds || [];
+            return ids.length === 0 || ids.includes(studentId);
+        });
+    },
+
+    getTeacherSchedules(teacherId) {
+        return this.getSchedules().filter(s => s.teacherId === teacherId);
+    },
+
+    async addSchedule(item) { return await this._add(this.TABLES.SCHEDULES, item); },
+    async updateSchedule(id, updates) { return await this._update(this.TABLES.SCHEDULES, id, updates); },
+    async deleteSchedule(id) { return await this._delete(this.TABLES.SCHEDULES, id); },
 
     getUpcomingConsultations(teacherId) {
         const today = new Date().toISOString().slice(0, 10);

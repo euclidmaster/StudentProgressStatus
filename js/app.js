@@ -241,6 +241,9 @@ const App = {
             analyticsNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
         }
 
+        // 시간표 nav: 모든 역할 표시 (학생/학부모도 자신의 시간표 조회 가능)
+        // (별도 숨김 처리 없음 — restrictedHiddenViews에 포함 안 함)
+
         // Student/Parent role: hide management-heavy nav items
         const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition', 'analytics'];
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -452,7 +455,7 @@ const App = {
             dashboard: 'navg-student', students: 'navg-student', 'student-detail': 'navg-student',
             attendance: 'navg-student', consultations: 'navg-student', teachers: 'navg-student', analytics: 'navg-student',
             plans: 'navg-study', progress: 'navg-study', homework: 'navg-study',
-            exam: 'navg-study', comments: 'navg-study', report: 'navg-study',
+            exam: 'navg-study', comments: 'navg-study', report: 'navg-study', schedule: 'navg-study',
             grades: 'navg-ops', board: 'navg-ops', notifications: 'navg-ops',
             messages: 'navg-ops', tasks: 'navg-ops', tuition: 'navg-ops'
         };
@@ -461,7 +464,7 @@ const App = {
             document.getElementById(targetGroup)?.classList.add('open');
         }
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -489,6 +492,7 @@ const App = {
             'tuition':        [T.TUITION],
             'analytics':      [T.PLANS, T.ATTENDANCE, T.GRADES, T.HOMEWORK],
             'parent-home':    [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.COMMENTS, T.GRADES],
+            'schedule':       [T.SCHEDULES],
         };
 
         const needed = viewTables[view] || [];
@@ -525,6 +529,7 @@ const App = {
             case 'tuition': this.renderTuition(); break;
             case 'analytics': this.renderAnalytics(); break;
             case 'parent-home': this.renderParentHome(); break;
+            case 'schedule': this.renderSchedule(); break;
         }
     },
 
@@ -3026,6 +3031,56 @@ const App = {
                 this.navigate('notifications');
                 break;
 
+            // 시간표 actions
+            case 'schedule-add':
+                this.openScheduleModal(null);
+                break;
+
+            case 'schedule-edit':
+                this.openScheduleModal(target.dataset.id);
+                break;
+
+            case 'schedule-delete': {
+                if (!confirm('이 수업을 삭제하시겠습니까?')) break;
+                try {
+                    await DataStore.deleteSchedule(target.dataset.id);
+                    this.toast('삭제되었습니다.', 'success');
+                    this.renderSchedule();
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'schedule-save': {
+                const day = document.getElementById('sch-day').value;
+                const subject = (document.getElementById('sch-subject').value || '').trim();
+                if (!subject) { this.toast('과목을 입력해주세요.', 'warning'); break; }
+                const startTime = document.getElementById('sch-start').value;
+                const endTime = document.getElementById('sch-end').value;
+                if (!startTime || !endTime) { this.toast('시간을 입력해주세요.', 'warning'); break; }
+                const teacherName = (document.getElementById('sch-teacher').value || '').trim();
+                const room = (document.getElementById('sch-room').value || '').trim();
+                const colorEl = document.querySelector('input[name="sch-color"]:checked');
+                const color = colorEl ? colorEl.value : '#4F46E5';
+                const studentIds = [...document.querySelectorAll('.sch-student-chk:checked')].map(el => el.value);
+                const editId = target.dataset.id;
+                try {
+                    if (editId) {
+                        await DataStore.updateSchedule(editId, { dayOfWeek: day, subject, startTime, endTime, teacherName, room, color, studentIds });
+                        this.toast('수정되었습니다.', 'success');
+                    } else {
+                        await DataStore.addSchedule({
+                            dayOfWeek: day, subject, startTime, endTime,
+                            teacherName, teacherId: this.currentUser?.id || '',
+                            room, color, studentIds
+                        });
+                        this.toast('수업이 추가되었습니다.', 'success');
+                    }
+                    this.closeModal();
+                    this.renderSchedule();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
             // 학부모 홈 actions
             case 'parent-view-detail':
                 this.navigate('student-detail', { studentId: this.currentUser.studentId });
@@ -4049,6 +4104,173 @@ const App = {
         } else {
             badge.style.display = 'none';
         }
+    },
+
+    // =========================================
+    //  VIEW: SCHEDULE (시간표 관리)
+    // =========================================
+    renderSchedule() {
+        const role = this.currentUser?.role;
+        const canEdit = role === 'director' || role === 'teacher';
+        const isStudent = role === 'student';
+        const isParent = role === 'parent';
+
+        const DAYS = ['월', '화', '수', '목', '금', '토'];
+        const DAY_COLORS = { '월': '#4F46E5', '화': '#10B981', '수': '#F59E0B', '목': '#EF4444', '금': '#8B5CF6', '토': '#06B6D4' };
+
+        // 역할별 시간표 필터
+        let schedules;
+        if (isStudent || isParent) {
+            const sid = this.currentUser.studentId;
+            schedules = DataStore.getStudentSchedules(sid);
+        } else if (role === 'teacher') {
+            // 담당 학생이 포함된 수업 + 본인이 담당인 수업
+            schedules = DataStore.getSchedules().filter(s => {
+                const myStudents = this.currentUser.assignedStudentIds || [];
+                const sIds = s.studentIds || [];
+                return s.teacherId === this.currentUser.id ||
+                    (sIds.length === 0 ? false : sIds.some(id => myStudents.includes(id)));
+            });
+        } else {
+            schedules = DataStore.getSchedules();
+        }
+
+        // 요일별 그룹핑
+        const byDay = {};
+        DAYS.forEach(d => byDay[d] = []);
+        schedules.forEach(s => {
+            if (byDay[s.dayOfWeek]) byDay[s.dayOfWeek].push(s);
+        });
+
+        // 수업 블록 HTML
+        const blockHtml = (s) => {
+            const stuNames = (s.studentIds || []).length > 0
+                ? (s.studentIds || []).map(id => {
+                    const st = DataStore.getStudent(id);
+                    return st ? this.escapeHtml(st.name) : '';
+                }).filter(Boolean).join(', ')
+                : '전체';
+            return `
+            <div class="sch-block" style="border-left:4px solid ${s.color || '#4F46E5'}">
+                <div class="sch-block-time">${s.startTime} ~ ${s.endTime}</div>
+                <div class="sch-block-subject">${this.escapeHtml(s.subject)}</div>
+                ${s.room ? `<div class="sch-block-meta"><i class="fas fa-door-open"></i> ${this.escapeHtml(s.room)}</div>` : ''}
+                ${s.teacherName ? `<div class="sch-block-meta"><i class="fas fa-chalkboard-teacher"></i> ${this.escapeHtml(s.teacherName)}</div>` : ''}
+                ${!isStudent && !isParent ? `<div class="sch-block-meta"><i class="fas fa-users"></i> ${this.escapeHtml(stuNames)}</div>` : ''}
+                ${canEdit ? `<div class="sch-block-actions">
+                    <button class="btn-icon" data-action="schedule-edit" data-id="${s.id}" title="수정"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon" data-action="schedule-delete" data-id="${s.id}" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
+                </div>` : ''}
+            </div>`;
+        };
+
+        const gridCols = DAYS.filter(d => canEdit || byDay[d].length > 0);
+
+        document.getElementById('content-area').innerHTML = `
+        <div class="view-container">
+            ${canEdit ? `
+            <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+                <button class="btn btn-primary" data-action="schedule-add"><i class="fas fa-plus"></i> 수업 추가</button>
+            </div>` : ''}
+
+            <div class="sch-grid" style="grid-template-columns:repeat(${gridCols.length},1fr)">
+                ${gridCols.map(day => `
+                <div class="sch-col">
+                    <div class="sch-day-header" style="background:${DAY_COLORS[day]}">
+                        <span>${day}요일</span>
+                        <span class="sch-count">${byDay[day].length}수업</span>
+                    </div>
+                    <div class="sch-blocks">
+                        ${byDay[day].length === 0
+                            ? `<div class="sch-empty">수업 없음</div>`
+                            : byDay[day]
+                                .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
+                                .map(s => blockHtml(s)).join('')}
+                    </div>
+                </div>`).join('')}
+            </div>
+            ${gridCols.length === 0 ? `
+            <div class="card"><div class="card-body" style="text-align:center;padding:3rem;color:var(--gray-400)">
+                <i class="fas fa-calendar-week" style="font-size:2rem;margin-bottom:1rem"></i>
+                <p>등록된 시간표가 없습니다.</p>
+            </div></div>` : ''}
+        </div>`;
+    },
+
+    openScheduleModal(scheduleId) {
+        const isEdit = !!scheduleId;
+        const s = isEdit ? DataStore._getById(DataStore.TABLES.SCHEDULES, scheduleId) : null;
+        const DAYS = ['월', '화', '수', '목', '금', '토'];
+        const COLORS = [
+            { label: '인디고', value: '#4F46E5' }, { label: '초록', value: '#10B981' },
+            { label: '주황', value: '#F59E0B' }, { label: '빨강', value: '#EF4444' },
+            { label: '보라', value: '#8B5CF6' }, { label: '하늘', value: '#06B6D4' },
+            { label: '분홍', value: '#EC4899' }, { label: '라임', value: '#84CC16' },
+        ];
+
+        const allStudents = this.getVisibleStudents();
+        const currentStudentIds = s?.studentIds || [];
+
+        this.openModal(isEdit ? '수업 수정' : '수업 추가', `
+            <div class="form-row">
+                <div class="form-group">
+                    <label>요일 <span class="required">*</span></label>
+                    <select class="form-control" id="sch-day">
+                        ${DAYS.map(d => `<option value="${d}" ${s?.dayOfWeek === d ? 'selected' : ''}>${d}요일</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>과목 <span class="required">*</span></label>
+                    <input type="text" class="form-control" id="sch-subject" value="${this.escapeHtml(s?.subject || '')}" placeholder="예: 수학">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>시작 시간 <span class="required">*</span></label>
+                    <input type="time" class="form-control" id="sch-start" value="${s?.startTime || ''}">
+                </div>
+                <div class="form-group">
+                    <label>종료 시간 <span class="required">*</span></label>
+                    <input type="time" class="form-control" id="sch-end" value="${s?.endTime || ''}">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>강사</label>
+                    <input type="text" class="form-control" id="sch-teacher" value="${this.escapeHtml(s?.teacherName || this.currentUser?.name || '')}" placeholder="담당 선생님">
+                </div>
+                <div class="form-group">
+                    <label>강의실</label>
+                    <input type="text" class="form-control" id="sch-room" value="${this.escapeHtml(s?.room || '')}" placeholder="예: 1강의실">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>색상</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+                    ${COLORS.map(c => `
+                        <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+                            <input type="radio" name="sch-color" value="${c.value}" ${(s?.color || '#4F46E5') === c.value ? 'checked' : ''}>
+                            <span style="width:18px;height:18px;border-radius:50%;background:${c.value};display:inline-block;border:2px solid ${(s?.color || '#4F46E5') === c.value ? '#1F2937' : 'transparent'}"></span>
+                            <span style="font-size:0.78rem">${c.label}</span>
+                        </label>`).join('')}
+                </div>
+            </div>
+            <div class="form-group">
+                <label>수강 학생 <span style="font-size:0.78rem;color:var(--gray-400)">(미선택 시 전체)</span></label>
+                <div class="sch-student-list">
+                    ${allStudents.map(st => `
+                        <label class="sch-student-chk-label">
+                            <input type="checkbox" class="sch-student-chk" value="${st.id}" ${currentStudentIds.includes(st.id) ? 'checked' : ''}>
+                            ${this.escapeHtml(st.name)} <span style="color:var(--gray-400);font-size:0.75rem">${this.escapeHtml(st.grade || '')}</span>
+                        </label>`).join('')}
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:1rem">
+                <button class="btn btn-primary" data-action="schedule-save" data-id="${scheduleId || ''}" style="flex:1">
+                    <i class="fas fa-save"></i> ${isEdit ? '수정' : '추가'}
+                </button>
+            </div>
+        `);
     },
 
     // =========================================

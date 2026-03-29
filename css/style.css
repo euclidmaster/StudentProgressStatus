@@ -2584,6 +2584,112 @@ th.sortable i {
     align-items: center;
 }
 
+/* ===== 시간표 ===== */
+.sch-grid {
+    display: grid;
+    gap: 12px;
+    align-items: start;
+}
+@media (max-width: 768px) { .sch-grid { grid-template-columns: 1fr !important; } }
+
+.sch-col {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.sch-day-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.sch-count {
+    font-size: 0.75rem;
+    font-weight: 400;
+    opacity: 0.85;
+}
+
+.sch-blocks { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.sch-block {
+    background: var(--gray-50);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    border-left: 4px solid var(--primary);
+    position: relative;
+}
+.sch-block-time {
+    font-size: 0.75rem;
+    color: var(--gray-400);
+    margin-bottom: 3px;
+    font-variant-numeric: tabular-nums;
+}
+.sch-block-subject {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gray-800);
+    margin-bottom: 4px;
+}
+.sch-block-meta {
+    font-size: 0.78rem;
+    color: var(--gray-500);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+}
+.sch-block-meta i { width: 12px; text-align: center; }
+.sch-block-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.sch-block:hover .sch-block-actions { opacity: 1; }
+
+.sch-empty {
+    text-align: center;
+    padding: 20px 0;
+    color: var(--gray-300);
+    font-size: 0.83rem;
+}
+
+.sch-student-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 140px;
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-sm);
+    margin-top: 4px;
+}
+.sch-student-chk-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.85rem;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: var(--gray-100);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.sch-student-chk-label:has(input:checked) {
+    background: var(--primary-bg);
+    color: var(--primary);
+    font-weight: 500;
+}
+
 /* ===== 학부모 홈 ===== */
 .parent-student-banner {
     display: flex;
