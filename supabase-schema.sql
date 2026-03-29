@@ -276,3 +276,20 @@ CREATE POLICY "anon_all" ON board_events FOR ALL TO anon USING (true) WITH CHECK
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'internal';
 -- 기존 데이터 중 channel이 NULL인 행을 'internal'로 채움
 UPDATE messages SET channel = 'internal' WHERE channel IS NULL;
+
+-- ============================================
+-- 마이그레이션: 출석 관리 테이블 추가
+-- 아래 SQL을 Supabase SQL Editor에서 실행하세요
+-- ============================================
+CREATE TABLE IF NOT EXISTS attendance (
+    id TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    status TEXT DEFAULT '출석',  -- '출석' | '결석' | '지각' | '조퇴'
+    note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all" ON attendance;
+CREATE POLICY "anon_all" ON attendance FOR ALL TO anon USING (true) WITH CHECK (true);

@@ -217,6 +217,12 @@ const App = {
             tasksNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
         }
 
+        // 출석 관리 nav: 원장/선생만 표시
+        const attendanceNav = document.getElementById('nav-attendance');
+        if (attendanceNav) {
+            attendanceNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
+        }
+
         // Student/Parent role: hide management-heavy nav items
         const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks'];
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -407,7 +413,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -417,7 +423,7 @@ const App = {
         const viewTables = {
             'dashboard':      [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
             'students':       [],
-            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
+            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE],
             'plans':          [T.PLANS],
             'progress':       [T.PLANS, T.PROGRESS],
             'comments':       [T.PLANS, T.COMMENTS],
@@ -425,6 +431,7 @@ const App = {
             'board':          [T.BOARD_POSTS, T.BOARD_EVENTS],
             'messages':       [T.MESSAGES],
             'tasks':          [],
+            'attendance':     [T.ATTENDANCE],
             'teachers':       [],
         };
 
@@ -452,6 +459,7 @@ const App = {
             case 'board': this.renderBoard(); break;
             case 'messages': this.renderMessages(); break;
             case 'tasks': this.renderTasks(); break;
+            case 'attendance': this.renderAttendance(); break;
             case 'teachers': this.renderTeachers(); break;
         }
     },
@@ -927,6 +935,8 @@ const App = {
                 </div>
             </div>
 
+            ${this.renderAttendanceMiniCard(studentId, canEdit)}
+
             ${this.renderSelfJournalCard(studentId, canAddProgress)}
 
             <div class="card">
@@ -978,6 +988,37 @@ const App = {
         const m = String(date.getMonth() + 1).padStart(2, '0');
         const d = String(date.getDate()).padStart(2, '0');
         return `${y}-${m}-${d}`;
+    },
+
+    // 학생 상세 페이지 출석 미니 카드
+    renderAttendanceMiniCard(studentId, canEdit) {
+        const ym = this.getLocalDateStr().slice(0, 7);
+        const [year, month] = ym.split('-').map(Number);
+        const stats = DataStore.getAttendanceStats(studentId, ym);
+        const STATUS_COLOR = { '출석': 'var(--success)', '결석': 'var(--danger)', '지각': 'var(--warning)', '조퇴': 'var(--info)' };
+
+        return `
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-header">
+                <h2><i class="fas fa-calendar-check"></i> ${year}년 ${month}월 출석</h2>
+                ${canEdit ? `<button class="btn btn-sm btn-outline" data-action="att-input-student" data-student-id="${studentId}" data-student-name="${this.escapeHtml(DataStore.getStudent(studentId)?.name || '')}"><i class="fas fa-edit"></i> 출석 입력</button>` : ''}
+            </div>
+            <div class="card-body">
+                ${stats.total === 0
+                    ? '<div style="color:var(--gray-400);font-size:0.9rem">이번 달 출석 기록이 없습니다.</div>'
+                    : `<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+                        ${['출석','결석','지각','조퇴'].map(st => `
+                            <div style="text-align:center">
+                                <div style="font-size:1.4rem;font-weight:700;color:${STATUS_COLOR[st]}">${stats[st]}</div>
+                                <div style="font-size:0.78rem;color:var(--gray-500)">${st}</div>
+                            </div>`).join('')}
+                        <div style="margin-left:auto;text-align:center">
+                            <div style="font-size:1.6rem;font-weight:800;color:${stats.rate >= 90 ? 'var(--success)' : stats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'}">${stats.rate}%</div>
+                            <div style="font-size:0.78rem;color:var(--gray-500)">출석률</div>
+                        </div>
+                    </div>`}
+            </div>
+        </div>`;
     },
 
     // 이번 주 월요일 날짜 반환 (YYYY-MM-DD)
@@ -2636,6 +2677,51 @@ const App = {
                 }
                 break;
 
+            // 출석 관리 actions
+            case 'att-prev-month': {
+                const [y, m] = (this._attendanceYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
+                const prev = new Date(y, m - 2, 1);
+                this._attendanceYM = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+                this.renderAttendance();
+                break;
+            }
+            case 'att-next-month': {
+                const [y, m] = (this._attendanceYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
+                const next = new Date(y, m, 1);
+                this._attendanceYM = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`;
+                this.renderAttendance();
+                break;
+            }
+            case 'att-load-day':
+                this.loadAttBulkDay();
+                break;
+
+            case 'att-set-status': {
+                const { studentId, date, status } = target.dataset;
+                try {
+                    await DataStore.upsertAttendance(studentId, date, status);
+                    this.loadAttBulkDay();
+                    // 통계 테이블 갱신
+                    this.renderAttendance();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+            case 'att-set-status-modal': {
+                const { studentId, date, status } = target.dataset;
+                try {
+                    await DataStore.upsertAttendance(studentId, date, status);
+                    const s = DataStore.getStudent(studentId);
+                    this.showStudentAttendanceModal(studentId, s ? s.name : '');
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+            case 'att-input-student': {
+                const { studentId, studentName } = target.dataset;
+                await DataStore._ensureLoaded(DataStore.TABLES.ATTENDANCE);
+                this.showStudentAttendanceModal(studentId, studentName);
+                break;
+            }
+
             // 업무 노트 actions
             case 'add-task': {
                 const content = (document.getElementById('task-content-input') || {}).value || '';
@@ -2806,6 +2892,171 @@ const App = {
                 this.showDateEvents(target.dataset.date || target.closest('[data-date]').dataset.date);
                 break;
         }
+    },
+
+    // =========================================
+    //  VIEW: ATTENDANCE (출석 관리 - 선생/원장)
+    // =========================================
+    renderAttendance() {
+        const students = this.getVisibleStudents();
+        const today = this.getLocalDateStr();
+        const ym = this._attendanceYM || today.slice(0, 7);
+        this._attendanceYM = ym;
+
+        const STATUS = ['출석', '결석', '지각', '조퇴'];
+        const STATUS_COLOR = { '출석': 'var(--success)', '결석': 'var(--danger)', '지각': 'var(--warning)', '조퇴': 'var(--info)' };
+
+        // 해당 월의 날짜 수
+        const [year, month] = ym.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+
+        // 학생별 통계
+        const statsRows = students.map(s => {
+            const stats = DataStore.getAttendanceStats(s.id, ym);
+            return { s, stats };
+        });
+
+        const html = `
+        <!-- 헤더: 월 이동 + 날짜별 빠른 입력 버튼 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <button class="btn btn-outline btn-sm" data-action="att-prev-month"><i class="fas fa-chevron-left"></i></button>
+                <strong style="font-size:1.05rem;min-width:90px;text-align:center">${year}년 ${month}월</strong>
+                <button class="btn btn-outline btn-sm" data-action="att-next-month"><i class="fas fa-chevron-right"></i></button>
+                <span style="color:var(--gray-400);font-size:0.85rem;margin-left:8px">날짜를 선택해 출석을 일괄 입력하세요</span>
+                <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+                    ${STATUS.map(st => `<span style="font-size:0.8rem;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:${STATUS_COLOR[st]};display:inline-block"></span>${st}</span>`).join('')}
+                </div>
+            </div>
+        </div>
+
+        <!-- 월별 학생 통계 테이블 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h2><i class="fas fa-chart-bar"></i> ${year}년 ${month}월 출석 현황</h2></div>
+            <div class="card-body no-padding">
+                ${students.length === 0
+                    ? '<div class="empty-state" style="padding:30px"><p>담당 학생이 없습니다</p></div>'
+                    : `<div class="table-wrapper"><table class="pivot-table">
+                    <thead><tr>
+                        <th style="min-width:80px">학생</th>
+                        <th style="color:var(--success)">출석</th>
+                        <th style="color:var(--danger)">결석</th>
+                        <th style="color:var(--warning)">지각</th>
+                        <th style="color:var(--info)">조퇴</th>
+                        <th>출석률</th>
+                        <th>출석 입력</th>
+                    </tr></thead>
+                    <tbody>
+                        ${statsRows.map(({ s, stats }) => `
+                        <tr>
+                            <td><strong>${this.escapeHtml(s.name)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">${this.escapeHtml(s.grade)}</div></td>
+                            <td style="text-align:center;color:var(--success);font-weight:600">${stats['출석']}</td>
+                            <td style="text-align:center;color:var(--danger);font-weight:600">${stats['결석']}</td>
+                            <td style="text-align:center;color:var(--warning);font-weight:600">${stats['지각']}</td>
+                            <td style="text-align:center;color:var(--info);font-weight:600">${stats['조퇴']}</td>
+                            <td style="text-align:center">
+                                ${stats.rate !== null
+                                    ? `<span style="font-weight:700;color:${stats.rate >= 90 ? 'var(--success)' : stats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'}">${stats.rate}%</span>`
+                                    : '<span style="color:var(--gray-300)">-</span>'}
+                            </td>
+                            <td style="text-align:center">
+                                <button class="btn btn-sm btn-outline" data-action="att-input-student" data-student-id="${s.id}" data-student-name="${this.escapeHtml(s.name)}">
+                                    <i class="fas fa-edit"></i> 입력
+                                </button>
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table></div>`}
+            </div>
+        </div>
+
+        <!-- 날짜별 일괄 입력 -->
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-calendar-day"></i> 날짜별 출석 입력</h2></div>
+            <div class="card-body">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+                    <label style="font-weight:600">날짜 선택</label>
+                    <input type="date" id="att-bulk-date" class="form-control" value="${today}" style="max-width:170px"
+                        min="${ym}-01" max="${ym}-${String(daysInMonth).padStart(2,'0')}">
+                    <button class="btn btn-primary btn-sm" data-action="att-load-day"><i class="fas fa-search"></i> 불러오기</button>
+                </div>
+                <div id="att-bulk-list"></div>
+            </div>
+        </div>
+        `;
+
+        document.getElementById('content-area').innerHTML = html;
+    },
+
+    // 날짜별 학생 출석 입력 UI 로드
+    loadAttBulkDay() {
+        const date = (document.getElementById('att-bulk-date') || {}).value;
+        if (!date) return;
+        const students = this.getVisibleStudents();
+        const STATUS_COLOR = { '출석': 'var(--success)', '결석': 'var(--danger)', '지각': 'var(--warning)', '조퇴': 'var(--info)' };
+
+        const html = students.map(s => {
+            const rec = DataStore.getStudentAttendanceOnDate(s.id, date);
+            const cur = rec ? rec.status : '';
+            return `
+            <div class="att-bulk-row">
+                <div class="att-bulk-name">
+                    <strong>${this.escapeHtml(s.name)}</strong>
+                    <span style="font-size:0.78rem;color:var(--gray-400)">${this.escapeHtml(s.grade)}</span>
+                </div>
+                <div class="att-status-group" data-student-id="${s.id}" data-date="${date}">
+                    ${['출석','결석','지각','조퇴'].map(st => `
+                    <button class="att-status-btn ${cur === st ? 'active' : ''}"
+                        style="${cur === st ? `background:${STATUS_COLOR[st]};color:white;border-color:${STATUS_COLOR[st]}` : ''}"
+                        data-action="att-set-status" data-student-id="${s.id}" data-date="${date}" data-status="${st}">
+                        ${st}
+                    </button>`).join('')}
+                    ${cur ? `<span class="badge ${cur === '출석' ? 'badge-success' : cur === '결석' ? 'badge-danger' : cur === '지각' ? 'badge-warning' : 'badge-info'}" style="margin-left:4px">${cur}</span>` : '<span style="font-size:0.78rem;color:var(--gray-300);margin-left:4px">미입력</span>'}
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('att-bulk-list').innerHTML = html ||
+            '<div style="color:var(--gray-400);padding:12px">담당 학생이 없습니다.</div>';
+    },
+
+    // 학생별 월 출석 기록 모달
+    showStudentAttendanceModal(studentId, studentName) {
+        const ym = this._attendanceYM || this.getLocalDateStr().slice(0, 7);
+        const [year, month] = ym.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const STATUS_COLOR = { '출석': 'var(--success)', '결석': 'var(--danger)', '지각': 'var(--warning)', '조퇴': 'var(--info)' };
+
+        const rows = Array.from({ length: daysInMonth }, (_, i) => {
+            const d = String(i + 1).padStart(2, '0');
+            const date = `${ym}-${d}`;
+            const rec = DataStore.getStudentAttendanceOnDate(studentId, date);
+            const cur = rec ? rec.status : '';
+            const dayOfWeek = new Date(date).getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            return `
+            <div class="att-bulk-row ${isWeekend ? 'att-weekend' : ''}">
+                <div class="att-bulk-name">
+                    <span style="font-weight:600;color:${isWeekend ? 'var(--gray-300)' : ''}">${month}/${i+1} (${'일월화수목금토'[dayOfWeek]})</span>
+                </div>
+                <div class="att-status-group" data-student-id="${studentId}" data-date="${date}">
+                    ${['출석','결석','지각','조퇴'].map(st => `
+                    <button class="att-status-btn ${cur === st ? 'active' : ''}"
+                        style="${cur === st ? `background:${STATUS_COLOR[st]};color:white;border-color:${STATUS_COLOR[st]}` : ''}"
+                        data-action="att-set-status-modal" data-student-id="${studentId}" data-date="${date}" data-status="${st}">
+                        ${st}
+                    </button>`).join('')}
+                    ${cur ? `<span style="font-size:0.8rem;color:${STATUS_COLOR[cur]};font-weight:600;margin-left:6px">${cur}</span>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+
+        const stats = DataStore.getAttendanceStats(studentId, ym);
+        const summary = `출석 ${stats['출석']} · 결석 ${stats['결석']} · 지각 ${stats['지각']} · 조퇴 ${stats['조퇴']} ${stats.rate !== null ? `· 출석률 <strong>${stats.rate}%</strong>` : ''}`;
+
+        this.openModal(`${studentName} — ${year}년 ${month}월 출석`,
+            `<div style="font-size:0.85rem;color:var(--gray-500);margin-bottom:12px">${summary}</div>
+             <div style="max-height:60vh;overflow-y:auto">${rows}</div>`);
     },
 
     // =========================================

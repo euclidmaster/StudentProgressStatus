@@ -11,7 +11,8 @@ const DataStore = {
         TEACHERS: 'teachers',
         GRADES: 'grades',
         BOARD_POSTS: 'board_posts',
-        BOARD_EVENTS: 'board_events'
+        BOARD_EVENTS: 'board_events',
+        ATTENDANCE: 'attendance'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -25,7 +26,8 @@ const DataStore = {
         teachers: [],
         grades: [],
         board_posts: [],
-        board_events: []
+        board_events: [],
+        attendance: []
     },
 
     _syncEnabled: true,
@@ -431,6 +433,62 @@ const DataStore = {
                     return (typeOrder[a.examType] || 9) - (typeOrder[b.examType] || 9);
                 return (a.examDate || '').localeCompare(b.examDate || '');
             });
+    },
+
+    // === ATTENDANCE (출석 관리) ===
+    getAttendances() { return this._getAll(this.TABLES.ATTENDANCE); },
+
+    getStudentAttendance(studentId) {
+        return this.getAttendances()
+            .filter(a => a.studentId === studentId)
+            .sort((a, b) => b.date.localeCompare(a.date));
+    },
+
+    getAttendanceByDate(date) {
+        return this.getAttendances().filter(a => a.date === date);
+    },
+
+    getStudentAttendanceInMonth(studentId, yearMonth) {
+        return this.getAttendances()
+            .filter(a => a.studentId === studentId && a.date.startsWith(yearMonth));
+    },
+
+    // 월별 학생 출석 통계: { 출석, 결석, 지각, 조퇴, 출석률 }
+    getAttendanceStats(studentId, yearMonth) {
+        const records = yearMonth
+            ? this.getStudentAttendanceInMonth(studentId, yearMonth)
+            : this.getStudentAttendance(studentId);
+        const counts = { '출석': 0, '결석': 0, '지각': 0, '조퇴': 0 };
+        records.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+        const total = records.length;
+        const rate = total > 0 ? Math.round((counts['출석'] / total) * 100) : null;
+        return { ...counts, total, rate };
+    },
+
+    async addAttendance(record) {
+        return await this._add(this.TABLES.ATTENDANCE, record);
+    },
+
+    async updateAttendance(id, updates) {
+        return await this._update(this.TABLES.ATTENDANCE, id, updates);
+    },
+
+    async deleteAttendance(id) {
+        return await this._delete(this.TABLES.ATTENDANCE, id);
+    },
+
+    // 특정 학생의 특정 날짜 출석 기록 (없으면 null)
+    getStudentAttendanceOnDate(studentId, date) {
+        return this.getAttendances().find(a => a.studentId === studentId && a.date === date) || null;
+    },
+
+    // 날짜+학생 upsert (있으면 수정, 없으면 추가)
+    async upsertAttendance(studentId, date, status, note = '') {
+        const existing = this.getStudentAttendanceOnDate(studentId, date);
+        if (existing) {
+            return await this.updateAttendance(existing.id, { status, note });
+        }
+        return await this.addAttendance({ studentId, date, status, note });
     },
 
     // === TEACHERS / USERS ===

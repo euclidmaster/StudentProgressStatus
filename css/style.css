@@ -2259,3 +2259,38 @@ th.sortable i {
 .role-tab-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--gray-200); background: white; cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
 .role-tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
 .role-tab-btn:hover:not(.active) { background: var(--gray-100); }
+
+/* === 출석 관리 === */
+.att-bulk-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--gray-100);
+    flex-wrap: wrap;
+}
+.att-bulk-row:last-child { border-bottom: none; }
+.att-weekend { opacity: 0.45; }
+.att-bulk-name {
+    min-width: 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.att-status-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.att-status-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--gray-200);
+    background: white;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.15s;
+}
+.att-status-btn:hover { background: var(--gray-100); }
+.att-status-btn.active { font-weight: 600; }
