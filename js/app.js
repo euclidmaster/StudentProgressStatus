@@ -254,8 +254,10 @@ const App = {
 
         this.bindEvents();
 
-        // 학생/학부모는 본인(자녀) 상세 페이지로 바로 이동
-        if ((role === 'student' || role === 'parent') && this.currentUser.studentId) {
+        // 학생/학부모는 전용 페이지로 바로 이동
+        if (role === 'parent' && this.currentUser.studentId) {
+            this.navigate('parent-home');
+        } else if (role === 'student' && this.currentUser.studentId) {
             this.navigate('student-detail', { studentId: this.currentUser.studentId });
         } else {
             this.navigate('dashboard');
@@ -459,7 +461,7 @@ const App = {
             document.getElementById(targetGroup)?.classList.add('open');
         }
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -486,6 +488,7 @@ const App = {
             'teachers':       [],
             'tuition':        [T.TUITION],
             'analytics':      [T.PLANS, T.ATTENDANCE, T.GRADES, T.HOMEWORK],
+            'parent-home':    [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.COMMENTS, T.GRADES],
         };
 
         const needed = viewTables[view] || [];
@@ -521,6 +524,7 @@ const App = {
             case 'teachers': this.renderTeachers(); break;
             case 'tuition': this.renderTuition(); break;
             case 'analytics': this.renderAnalytics(); break;
+            case 'parent-home': this.renderParentHome(); break;
         }
     },
 
@@ -3022,6 +3026,11 @@ const App = {
                 this.navigate('notifications');
                 break;
 
+            // 학부모 홈 actions
+            case 'parent-view-detail':
+                this.navigate('student-detail', { studentId: this.currentUser.studentId });
+                break;
+
             // 비교 분석 actions
             case 'analytics-filter':
                 this._analyticsGrade = target.dataset.grade;
@@ -4040,6 +4049,256 @@ const App = {
         } else {
             badge.style.display = 'none';
         }
+    },
+
+    // =========================================
+    //  VIEW: PARENT HOME (학부모 전용 대시보드)
+    // =========================================
+    renderParentHome() {
+        const user = this.currentUser;
+        if (!user || user.role !== 'parent') return;
+
+        const studentId = user.studentId;
+        const student = DataStore.getStudent(studentId);
+        if (!student) {
+            document.getElementById('content-area').innerHTML =
+                '<div class="card"><div class="card-body"><p style="color:var(--gray-500)">연결된 학생 정보가 없습니다. 원장에게 문의해주세요.</p></div></div>';
+            return;
+        }
+
+        const today = this.getLocalDateStr();
+        const todayDate = new Date(today);
+        const ym = today.slice(0, 7);
+        const [year, month] = ym.split('-').map(Number);
+
+        // 1. 오늘 출결
+        const todayAtt = (DataStore._cache['attendance'] || []).find(a => a.studentId === studentId && a.date === today);
+        const attStats = DataStore.getAttendanceStats(studentId, ym);
+
+        // 2. 미완료 숙제
+        const allHw = DataStore.getHomeworkForStudent(studentId);
+        const pendingHw = allHw.filter(h => !DataStore.isHomeworkCompletedBy(h, studentId))
+            .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
+        const overdueHw = pendingHw.filter(h => h.dueDate && h.dueDate < today);
+
+        // 3. D-day 시험 (30일 이내)
+        const in30 = new Date(todayDate.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+        const upcomingExams = DataStore.getExamPlansForStudent(studentId)
+            .filter(p => p.examDate && p.examDate >= today && p.examDate <= in30)
+            .sort((a, b) => a.examDate.localeCompare(b.examDate));
+
+        // 4. 학부모에게 공개된 최근 코멘트
+        const recentComments = Permissions.filterVisibleComments(
+            DataStore.getStudentComments(studentId)
+        ).slice(0, 4);
+
+        // 5. 이번달 진도율
+        const activePlans = DataStore.getStudentPlans(studentId).filter(p => p.status === 'active');
+        const progressPct = activePlans.length > 0
+            ? Math.round(activePlans.reduce((s, p) => s + (p.totalUnits > 0 ? (p.completedUnits / p.totalUnits) * 100 : 0), 0) / activePlans.length)
+            : 0;
+
+        // 6. 최근 성적
+        const grades = DataStore.getStudentGrades(studentId).sort((a, b) =>
+            (b.examDate || b.createdAt || '').localeCompare(a.examDate || a.createdAt || ''));
+        const latestGrade = grades.length > 0 && grades[0].totalAvg > 0 ? grades[0] : null;
+
+        // === 오늘 출결 상태 렌더링 ===
+        const attStatusHtml = (() => {
+            if (!todayAtt) return `<div class="parent-today-att parent-att-none"><i class="fas fa-question-circle"></i><span>오늘 출결 기록 없음</span></div>`;
+            const colorMap = { '출석': 'var(--success)', '결석': 'var(--danger)', '지각': 'var(--warning)', '조퇴': 'var(--info)' };
+            const iconMap = { '출석': 'fa-check-circle', '결석': 'fa-times-circle', '지각': 'fa-clock', '조퇴': 'fa-sign-out-alt' };
+            const color = colorMap[todayAtt.status] || 'var(--gray-400)';
+            const icon = iconMap[todayAtt.status] || 'fa-circle';
+            return `<div class="parent-today-att" style="border-color:${color};background:${color}18">
+                <i class="fas ${icon}" style="color:${color};font-size:2rem"></i>
+                <div>
+                    <div style="font-size:1.3rem;font-weight:800;color:${color}">${todayAtt.status}</div>
+                    ${todayAtt.note ? `<div style="font-size:0.82rem;color:var(--gray-500)">${this.escapeHtml(todayAtt.note)}</div>` : ''}
+                </div>
+            </div>`;
+        })();
+
+        // === D-day 배지 ===
+        const ddayBadge = date => {
+            const diff = Math.ceil((new Date(date) - todayDate) / 86400000);
+            if (diff === 0) return `<span class="exam-dday today">D-Day</span>`;
+            if (diff <= 3) return `<span class="exam-dday soon">D-${diff}</span>`;
+            return `<span class="exam-dday normal">D-${diff}</span>`;
+        };
+
+        document.getElementById('content-area').innerHTML = `
+        <div class="view-container">
+            <!-- 학생 이름 헤더 -->
+            <div class="parent-student-banner">
+                <div class="parent-avatar">${this.escapeHtml(student.name.charAt(0))}</div>
+                <div>
+                    <div class="parent-student-name">${this.escapeHtml(student.name)}</div>
+                    <div class="parent-student-meta">${this.escapeHtml((student.school||''))} · ${this.escapeHtml((student.grade||''))} ${this.escapeHtml((student.className||''))}</div>
+                </div>
+                <button class="btn btn-sm btn-outline" data-action="parent-view-detail" style="margin-left:auto">
+                    <i class="fas fa-user"></i> 상세 보기
+                </button>
+            </div>
+
+            <!-- 요약 지표 4개 -->
+            <div class="report-summary-grid" style="margin-bottom:1.5rem">
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--primary-bg);color:var(--primary)"><i class="fas fa-chart-line"></i></div>
+                    <div><div class="report-stat-label">이번달 진도율</div><div class="report-stat-value">${progressPct}%</div></div>
+                </div>
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--success-bg);color:var(--success)"><i class="fas fa-calendar-check"></i></div>
+                    <div><div class="report-stat-label">${month}월 출석률</div><div class="report-stat-value">${attStats.total > 0 ? attStats.rate + '%' : '-'}</div></div>
+                </div>
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--warning-bg);color:var(--warning)"><i class="fas fa-tasks"></i></div>
+                    <div><div class="report-stat-label">미완료 숙제</div><div class="report-stat-value" style="color:${pendingHw.length > 0 ? 'var(--danger)' : 'var(--success)'}">${pendingHw.length}개</div></div>
+                </div>
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--info-bg);color:var(--info)"><i class="fas fa-clipboard-check"></i></div>
+                    <div><div class="report-stat-label">예정 시험</div><div class="report-stat-value">${upcomingExams.length}개</div></div>
+                </div>
+            </div>
+
+            <div class="parent-grid">
+                <!-- 오늘 출결 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-calendar-day" style="color:var(--primary)"></i> 오늘 출결</h2>
+                        <span style="font-size:0.82rem;color:var(--gray-400)">${today}</span>
+                    </div>
+                    <div class="card-body">
+                        ${attStatusHtml}
+                        ${attStats.total > 0 ? `
+                        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--gray-100);display:flex;gap:16px;flex-wrap:wrap">
+                            ${['출석','결석','지각','조퇴'].map(st => `
+                                <div style="text-align:center">
+                                    <div style="font-size:1.1rem;font-weight:700">${attStats[st]}</div>
+                                    <div style="font-size:0.75rem;color:var(--gray-400)">${st}</div>
+                                </div>`).join('')}
+                            <div style="margin-left:auto;text-align:center">
+                                <div style="font-size:1.1rem;font-weight:700;color:${attStats.rate>=90?'var(--success)':attStats.rate>=70?'var(--warning)':'var(--danger)'}">${attStats.rate}%</div>
+                                <div style="font-size:0.75rem;color:var(--gray-400)">${month}월 출석률</div>
+                            </div>
+                        </div>` : ''}
+                    </div>
+                </div>
+
+                <!-- 미완료 숙제 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-tasks" style="color:var(--warning)"></i> 미완료 숙제</h2>
+                        ${overdueHw.length > 0 ? `<span class="badge badge-danger"><i class="fas fa-exclamation-circle"></i> 기한만료 ${overdueHw.length}</span>` : `<span class="badge badge-success">양호</span>`}
+                    </div>
+                    <div class="card-body" style="padding:${pendingHw.length ? '8px 20px' : ''}">
+                        ${pendingHw.length === 0
+                            ? '<div style="text-align:center;padding:16px;color:var(--success)"><i class="fas fa-check-circle" style="font-size:1.5rem"></i><br><span style="font-size:0.9rem;margin-top:6px;display:block">모든 숙제 완료!</span></div>'
+                            : pendingHw.slice(0, 5).map(h => {
+                                const isOverdue = h.dueDate && h.dueDate < today;
+                                return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+                                    <i class="fas fa-circle" style="font-size:0.4rem;color:${isOverdue ? 'var(--danger)' : 'var(--warning)'}"></i>
+                                    <span style="flex:1;font-size:0.88rem;font-weight:500">${this.escapeHtml(h.title)}</span>
+                                    ${h.subject ? `<span style="font-size:0.75rem;color:var(--primary);background:var(--primary-bg);padding:2px 6px;border-radius:4px">${this.escapeHtml(h.subject)}</span>` : ''}
+                                    ${h.dueDate ? `<span style="font-size:0.75rem;color:${isOverdue ? 'var(--danger)' : 'var(--gray-400)'};font-weight:${isOverdue ? '600' : '400'}">${h.dueDate}</span>` : ''}
+                                </div>`;
+                              }).join('') + (pendingHw.length > 5 ? `<div style="text-align:center;padding:6px;font-size:0.8rem;color:var(--gray-400)">외 ${pendingHw.length-5}개 더</div>` : '')}
+                    </div>
+                </div>
+
+                <!-- 예정 시험 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-clipboard-check" style="color:var(--info)"></i> 예정 시험 <span style="font-size:0.8rem;color:var(--gray-400);font-weight:400">30일 이내</span></h2>
+                    </div>
+                    <div class="card-body" style="padding:${upcomingExams.length ? '8px 20px' : ''}">
+                        ${upcomingExams.length === 0
+                            ? '<div style="text-align:center;padding:16px;color:var(--gray-300)"><i class="fas fa-calendar" style="font-size:1.5rem"></i><br><span style="font-size:0.9rem;margin-top:6px;display:block">예정된 시험 없음</span></div>'
+                            : upcomingExams.map(p => {
+                                const checklist = p.checklist || [];
+                                const total = checklist.length;
+                                const done = checklist.filter(c => (c.completedBy || []).includes(studentId)).length;
+                                return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+                                    <div style="flex:1">
+                                        <div style="font-size:0.9rem;font-weight:600">${this.escapeHtml(p.examName)}</div>
+                                        <div style="font-size:0.78rem;color:var(--gray-400)">시험일 ${p.examDate}${total > 0 ? ` · 준비 ${done}/${total}` : ''}</div>
+                                    </div>
+                                    ${ddayBadge(p.examDate)}
+                                </div>`;
+                              }).join('')}
+                    </div>
+                </div>
+
+                <!-- 선생님 코멘트 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-comment-dots" style="color:var(--purple)"></i> 선생님 코멘트</h2>
+                        <span class="badge" style="background:var(--purple-bg);color:var(--purple)">${recentComments.length}건</span>
+                    </div>
+                    <div class="card-body" style="padding:${recentComments.length ? '8px 20px' : ''}">
+                        ${recentComments.length === 0
+                            ? '<div style="text-align:center;padding:16px;color:var(--gray-300)"><i class="fas fa-comments" style="font-size:1.5rem"></i><br><span style="font-size:0.9rem;margin-top:6px;display:block">공개된 코멘트 없음</span></div>'
+                            : recentComments.map(c => `
+                                <div style="padding:10px 0;border-bottom:1px solid var(--gray-100)">
+                                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                        <span style="font-size:0.82rem;font-weight:600;color:var(--gray-700)">${this.escapeHtml(c.author)}</span>
+                                        ${this.getRoleBadge(c.authorRole)}
+                                        <span style="font-size:0.75rem;color:var(--gray-400);margin-left:auto">${this.formatDate(c.createdAt)}</span>
+                                    </div>
+                                    <div style="font-size:0.88rem;color:var(--gray-700);line-height:1.5">${this.escapeHtml(c.content).substring(0,120)}${c.content.length > 120 ? '...' : ''}</div>
+                                </div>`).join('')}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 이번달 진도 상세 -->
+            ${activePlans.length > 0 ? `
+            <div class="card" style="margin-top:1.5rem">
+                <div class="card-header">
+                    <h2><i class="fas fa-book-open" style="color:var(--primary)"></i> 진행 중인 학습 계획</h2>
+                    <span class="badge badge-primary">${activePlans.length}개</span>
+                </div>
+                <div class="card-body">
+                    ${activePlans.map(p => {
+                        const pct = p.totalUnits > 0 ? Math.round((p.completedUnits / p.totalUnits) * 100) : 0;
+                        const color = pct >= 75 ? 'var(--success)' : pct >= 40 ? 'var(--primary)' : 'var(--warning)';
+                        return `<div style="margin-bottom:14px">
+                            <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+                                <span style="font-size:0.88rem;font-weight:600">${this.escapeHtml(p.subject)} · ${this.escapeHtml(p.textbook)}</span>
+                                <span style="font-size:0.88rem;font-weight:700;color:${color}">${pct}%</span>
+                            </div>
+                            <div style="background:var(--gray-100);border-radius:6px;height:8px">
+                                <div style="width:${pct}%;background:${color};border-radius:6px;height:100%;transition:width 0.4s"></div>
+                            </div>
+                            <div style="font-size:0.75rem;color:var(--gray-400);margin-top:3px">${p.completedUnits} / ${p.totalUnits} ${this.escapeHtml(p.unitLabel||'')}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>` : ''}
+
+            <!-- 최근 성적 -->
+            ${latestGrade ? `
+            <div class="card" style="margin-top:1.5rem">
+                <div class="card-header">
+                    <h2><i class="fas fa-trophy" style="color:var(--warning)"></i> 최근 시험 성적</h2>
+                    <span style="font-size:0.82rem;color:var(--gray-400)">${this.escapeHtml(latestGrade.examName||latestGrade.examType||'')} · ${latestGrade.examDate||''}</span>
+                </div>
+                <div class="card-body">
+                    <div style="display:flex;gap:12px;flex-wrap:wrap">
+                        ${(latestGrade.subjects||[]).slice(0,6).map(s => `
+                            <div style="text-align:center;background:var(--gray-50);border-radius:8px;padding:10px 14px;min-width:64px">
+                                <div style="font-size:1.1rem;font-weight:700;color:${s.score>=90?'var(--success)':s.score>=70?'var(--primary)':s.score>=50?'var(--warning)':'var(--danger)'}">${s.score}</div>
+                                <div style="font-size:0.72rem;color:var(--gray-500);margin-top:2px">${this.escapeHtml(s.subject||'')}</div>
+                            </div>`).join('')}
+                        ${latestGrade.totalAvg > 0 ? `
+                            <div style="text-align:center;background:var(--primary-bg);border-radius:8px;padding:10px 14px;min-width:64px;margin-left:auto">
+                                <div style="font-size:1.1rem;font-weight:700;color:var(--primary)">${Math.round(latestGrade.totalAvg*10)/10}</div>
+                                <div style="font-size:0.72rem;color:var(--primary);margin-top:2px">평균</div>
+                            </div>` : ''}
+                    </div>
+                </div>
+            </div>` : ''}
+        </div>`;
     },
 
     // =========================================

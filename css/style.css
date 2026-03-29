@@ -2584,6 +2584,49 @@ th.sortable i {
     align-items: center;
 }
 
+/* ===== 학부모 홈 ===== */
+.parent-student-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow);
+}
+.parent-avatar {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 1.4rem;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.parent-student-name { font-size: 1.15rem; font-weight: 700; color: var(--gray-800); }
+.parent-student-meta { font-size: 0.83rem; color: var(--gray-400); margin-top: 2px; }
+
+.parent-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+@media (max-width: 900px) { .parent-grid { grid-template-columns: 1fr; } }
+
+.parent-today-att {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    border: 2px solid var(--gray-200);
+    border-radius: var(--radius-sm);
+    background: var(--gray-50);
+}
+.parent-att-none { color: var(--gray-400); font-size: 0.9rem; }
+.parent-att-none i { font-size: 1.5rem; }
+
 /* ===== 학생 비교 분석 ===== */
 .analytics-grid {
     display: grid;
