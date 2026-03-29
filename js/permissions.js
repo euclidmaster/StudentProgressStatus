@@ -6,7 +6,8 @@ const Permissions = {
     ROLES: {
         DIRECTOR: 'director',   // 원장: 모든 권한
         TEACHER: 'teacher',     // 선생: 담당 학생 편집, 코멘트 작성
-        STUDENT: 'student'      // 학생: 본인 진도 조회만
+        STUDENT: 'student',     // 학생: 본인 진도 조회만
+        PARENT: 'parent'        // 학부모: 자녀 진도/성적/코멘트(학부모 공개) 조회만
     },
 
     // 코멘트 가시성 수신자 상수
@@ -56,6 +57,13 @@ const Permissions = {
         return this.getCurrentRole() === this.ROLES.STUDENT;
     },
 
+    /**
+     * 학부모인지 확인
+     */
+    isParent() {
+        return this.getCurrentRole() === this.ROLES.PARENT;
+    },
+
     // ==========================================
     //  학생 접근 권한
     // ==========================================
@@ -77,6 +85,11 @@ const Permissions = {
 
         // 학생: 본인만 조회 가능
         if (user.role === this.ROLES.STUDENT) {
+            return user.studentId === studentId;
+        }
+
+        // 학부모: 자녀만 조회 가능
+        if (user.role === this.ROLES.PARENT) {
             return user.studentId === studentId;
         }
 
@@ -185,6 +198,12 @@ const Permissions = {
         if (user.role === this.ROLES.STUDENT) {
             const recipients = comment.recipients || [];
             return recipients.includes(this.RECIPIENTS.STUDENT);
+        }
+
+        // 학부모: recipients에 'parent'가 포함된 경우만 조회 가능
+        if (user.role === this.ROLES.PARENT) {
+            const recipients = comment.recipients || [];
+            return recipients.includes(this.RECIPIENTS.PARENT);
         }
 
         return false;
@@ -338,7 +357,8 @@ const Permissions = {
         const labels = {
             [this.ROLES.DIRECTOR]: '원장',
             [this.ROLES.TEACHER]: '선생님',
-            [this.ROLES.STUDENT]: '학생'
+            [this.ROLES.STUDENT]: '학생',
+            [this.ROLES.PARENT]: '학부모'
         };
         return labels[role] || '사용자';
     },

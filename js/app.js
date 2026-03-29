@@ -184,9 +184,9 @@ const App = {
         // Update user badge
         const badge = document.getElementById('user-badge');
         if (badge && this.currentUser) {
-            const roleLabels = { director: '원장', teacher: '선생님', student: '학생' };
+            const roleLabels = { director: '원장', teacher: '선생님', student: '학생', parent: '학부모' };
             const roleLabel = roleLabels[role] || '사용자';
-            const badgeClass = role === 'director' ? 'badge-danger' : role === 'student' ? 'badge-success' : 'badge-primary';
+            const badgeClass = role === 'director' ? 'badge-danger' : role === 'student' ? 'badge-success' : role === 'parent' ? 'badge-warning' : 'badge-primary';
             badge.innerHTML = `<i class="fas fa-user-circle"></i> ${this.escapeHtml(this.currentUser.name)} <span class="badge ${badgeClass}" style="font-size:0.7rem">${roleLabel}</span> <span style="font-size:0.75rem;color:var(--gray-400)">EM플러스</span>`;
         }
 
@@ -211,21 +211,27 @@ const App = {
             }
         }
 
-        // Student role: hide management-heavy nav items
-        const studentHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages'];
+        // 업무 노트 nav: 원장/선생만 표시
+        const tasksNav = document.getElementById('nav-tasks');
+        if (tasksNav) {
+            tasksNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
+        }
+
+        // Student/Parent role: hide management-heavy nav items
+        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
-            if (role === 'student' && studentHiddenViews.includes(view)) {
+            if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
                 item.style.display = 'none';
-            } else if (view !== 'teachers') {
+            } else if (view !== 'teachers' && view !== 'tasks') {
                 item.style.display = '';
             }
         });
 
         this.bindEvents();
 
-        // Students go directly to their detail page
-        if (role === 'student' && this.currentUser.studentId) {
+        // 학생/학부모는 본인(자녀) 상세 페이지로 바로 이동
+        if ((role === 'student' || role === 'parent') && this.currentUser.studentId) {
             this.navigate('student-detail', { studentId: this.currentUser.studentId });
         } else {
             this.navigate('dashboard');
@@ -401,7 +407,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -418,6 +424,7 @@ const App = {
             'grades':         [T.GRADES],
             'board':          [T.BOARD_POSTS, T.BOARD_EVENTS],
             'messages':       [T.MESSAGES],
+            'tasks':          [],
             'teachers':       [],
         };
 
@@ -444,6 +451,7 @@ const App = {
             case 'grades': this.renderGrades(); break;
             case 'board': this.renderBoard(); break;
             case 'messages': this.renderMessages(); break;
+            case 'tasks': this.renderTasks(); break;
             case 'teachers': this.renderTeachers(); break;
         }
     },
@@ -2628,6 +2636,40 @@ const App = {
                 }
                 break;
 
+            // 업무 노트 actions
+            case 'add-task': {
+                const content = (document.getElementById('task-content-input') || {}).value || '';
+                if (!content.trim()) { this.toast('할 일 내용을 입력해주세요.', 'warning'); break; }
+                const studentId = (document.getElementById('task-student-select') || {}).value || null;
+                const dueDate = (document.getElementById('task-due-date') || {}).value || null;
+                try {
+                    await DataStore.addTask(content.trim(), studentId || null, dueDate || null);
+                    this.toast('할 일이 추가되었습니다.', 'success');
+                    this.renderTasks();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'toggle-task': {
+                const taskId = target.dataset.taskId;
+                const completed = target.checked;
+                try {
+                    await DataStore.updateTask(taskId, { completed });
+                    this.renderTasks();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'delete-task': {
+                if (!confirm('이 할 일을 삭제하시겠습니까?')) break;
+                try {
+                    await DataStore.deleteTask(target.dataset.taskId);
+                    this.toast('삭제되었습니다.', 'success');
+                    this.renderTasks();
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                break;
+            }
+
             case 'sort-grades': {
                 const col = target.dataset.col;
                 if (this._gradesSortCol === col) this._gradesSortAsc = !this._gradesSortAsc;
@@ -2764,6 +2806,75 @@ const App = {
                 this.showDateEvents(target.dataset.date || target.closest('[data-date]').dataset.date);
                 break;
         }
+    },
+
+    // =========================================
+    //  VIEW: TASKS (업무 노트 - 선생/원장 전용)
+    // =========================================
+    renderTasks() {
+        const tasks = DataStore.getMyTasks();
+        const students = this.getVisibleStudents();
+        const pending = tasks.filter(t => !t.completed);
+        const done = tasks.filter(t => t.completed);
+
+        const taskRow = (t) => {
+            const student = t.studentId ? DataStore.getStudent(t.studentId) : null;
+            return `
+            <div class="task-item ${t.completed ? 'task-done' : ''}" data-task-id="${t.id}">
+                <label class="task-checkbox-label">
+                    <input type="checkbox" ${t.completed ? 'checked' : ''} data-action="toggle-task" data-task-id="${t.id}">
+                </label>
+                <div class="task-body">
+                    <div class="task-content">${this.escapeHtml(t.content)}</div>
+                    <div class="task-meta">
+                        ${student ? `<span style="color:var(--primary);font-size:0.8rem"><i class="fas fa-user-graduate"></i> ${this.escapeHtml(student.name)}</span>` : ''}
+                        ${t.dueDate ? `<span style="color:${t.dueDate < this.getLocalDateStr() && !t.completed ? 'var(--danger)' : 'var(--gray-400)'};font-size:0.8rem"><i class="fas fa-calendar"></i> ${t.dueDate}</span>` : ''}
+                        <span style="color:var(--gray-300);font-size:0.75rem">${this.formatDateTime(t.createdAt)}</span>
+                    </div>
+                </div>
+                <button class="btn-icon" data-action="delete-task" data-task-id="${t.id}" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
+            </div>`;
+        };
+
+        const html = `
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-header"><h2><i class="fas fa-plus"></i> 새 할 일 추가</h2></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <input type="text" id="task-content-input" class="form-control" placeholder="할 일을 입력하세요 (예: 박준서 - 다음 수업 전 영어 단어 테스트 확인)" style="margin-bottom:8px">
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <select id="task-student-select" class="form-control" style="max-width:180px">
+                        <option value="">학생 없음</option>
+                        ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
+                    </select>
+                    <input type="date" id="task-due-date" class="form-control" style="max-width:160px">
+                    <button class="btn btn-primary btn-sm" data-action="add-task"><i class="fas fa-plus"></i> 추가</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-header"><h2><i class="fas fa-list-ul"></i> 할 일 <span class="badge badge-primary">${pending.length}</span></h2></div>
+            <div class="card-body" style="padding:0">
+                ${pending.length === 0
+                    ? '<div class="empty-state" style="padding:30px"><i class="fas fa-check-circle" style="color:var(--success)"></i><h3>모두 완료했습니다!</h3></div>'
+                    : pending.map(taskRow).join('')}
+            </div>
+        </div>
+
+        ${done.length > 0 ? `
+        <div class="card">
+            <div class="card-header" style="cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+                <h2><i class="fas fa-check-circle" style="color:var(--success)"></i> 완료됨 <span class="badge badge-success">${done.length}</span></h2>
+            </div>
+            <div class="card-body" style="padding:0;display:none">
+                ${done.map(taskRow).join('')}
+            </div>
+        </div>` : ''}
+        `;
+
+        document.getElementById('content-area').innerHTML = html;
     },
 
     // =========================================
@@ -2942,14 +3053,30 @@ const App = {
         });
     },
 
-    showTeacherForm(teacher = null) {
+    showTeacherForm(teacher = null, defaultRole = 'teacher') {
         const isEdit = !!teacher;
+        const allStudents = DataStore.getStudents();
+        const currentRole = isEdit ? (teacher.role || 'teacher') : defaultRole;
+
         const html = `
             <form id="teacher-form">
+                ${!isEdit ? `
+                <div class="form-group">
+                    <label>계정 유형</label>
+                    <div style="display:flex;gap:8px;margin-bottom:4px">
+                        <button type="button" class="role-tab-btn ${currentRole === 'teacher' ? 'active' : ''}" data-role="teacher" onclick="document.querySelector('[name=accountRole]').value='teacher';document.getElementById('parent-student-group').style.display='none';this.parentElement.querySelectorAll('.role-tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                            <i class="fas fa-chalkboard-teacher"></i> 선생님
+                        </button>
+                        <button type="button" class="role-tab-btn ${currentRole === 'parent' ? 'active' : ''}" data-role="parent" onclick="document.querySelector('[name=accountRole]').value='parent';document.getElementById('parent-student-group').style.display='';this.parentElement.querySelectorAll('.role-tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                            <i class="fas fa-user-friends"></i> 학부모
+                        </button>
+                    </div>
+                    <input type="hidden" name="accountRole" value="${currentRole}">
+                </div>` : ''}
                 <div class="form-row">
                     <div class="form-group">
                         <label>이름 <span class="required">*</span></label>
-                        <input type="text" class="form-control" name="name" required value="${isEdit ? this.escapeHtml(teacher.name) : ''}" placeholder="선생님 이름">
+                        <input type="text" class="form-control" name="name" required value="${isEdit ? this.escapeHtml(teacher.name) : ''}" placeholder="이름">
                     </div>
                     <div class="form-group">
                         <label>로그인 ID <span class="required">*</span></label>
@@ -2958,7 +3085,14 @@ const App = {
                 </div>
                 <div class="form-group">
                     <label>비밀번호 ${isEdit ? '' : '<span class="required">*</span>'}</label>
-                    <input type="password" class="form-control" name="password" ${isEdit ? '' : 'required'} placeholder="${isEdit ? '변경시에만 입력' : '비밀번호'}">
+                    <input type="password" class="form-control" name="password" ${isEdit ? '' : 'required'} placeholder="${isEdit ? '변경시에만 입력' : '비밀번호 (기본값: 1234)'}">
+                </div>
+                <div class="form-group" id="parent-student-group" style="display:${currentRole === 'parent' ? '' : 'none'}">
+                    <label>연결할 자녀 <span class="required">*</span></label>
+                    <select class="form-control" name="parentStudentId">
+                        <option value="">학생 선택</option>
+                        ${allStudents.map(s => `<option value="${s.id}" ${isEdit && teacher.studentId === s.id ? 'selected' : ''}>${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)} ${this.escapeHtml(s.className)})</option>`).join('')}
+                    </select>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="App.closeModal()">취소</button>
@@ -2968,7 +3102,13 @@ const App = {
             </form>
         `;
 
-        this.openModal(isEdit ? '선생님 정보 수정' : '새 선생님 등록', html);
+        this.openModal(isEdit ? '계정 정보 수정' : '새 계정 등록', html);
+
+        // role-tab-btn 스타일 (인라인)
+        document.querySelectorAll('.role-tab-btn').forEach(btn => {
+            btn.style.cssText = 'padding:6px 14px;border-radius:6px;border:1px solid var(--gray-200);background:white;cursor:pointer;font-size:0.88rem;';
+            if (btn.classList.contains('active')) btn.style.background = 'var(--primary)'; btn.style.color = btn.classList.contains('active') ? 'white' : '';
+        });
 
         document.getElementById('teacher-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -2976,6 +3116,7 @@ const App = {
             const name = form.name.value.trim();
             const loginId = isEdit ? teacher.loginId : form.loginId.value.trim();
             const password = form.password.value;
+            const accountRole = isEdit ? (teacher.role || 'teacher') : (form.querySelector('[name=accountRole]').value || 'teacher');
 
             if (!isEdit && DataStore.getTeacherByLoginId(loginId)) {
                 this.toast('이미 존재하는 로그인 ID입니다.', 'error');
@@ -2987,11 +3128,18 @@ const App = {
                     const updates = { name };
                     if (password) updates.password = bcrypt.hashSync(password, 10);
                     await DataStore.updateTeacher(teacher.id, updates);
-                    this.toast('선생님 정보가 수정되었습니다.', 'success');
+                    this.toast('정보가 수정되었습니다.', 'success');
                 } else {
                     const rawPw = password || '1234';
-                    await DataStore.addTeacher({ name, loginId, password: bcrypt.hashSync(rawPw, 10), role: 'teacher', assignedStudentIds: [] });
-                    this.toast('새 선생님이 등록되었습니다.', 'success');
+                    if (accountRole === 'parent') {
+                        const parentStudentId = form.querySelector('[name=parentStudentId]').value;
+                        if (!parentStudentId) { this.toast('연결할 학생을 선택해주세요.', 'error'); return; }
+                        await DataStore.addTeacher({ name, loginId, password: bcrypt.hashSync(rawPw, 10), role: 'parent', studentId: parentStudentId, assignedStudentIds: [parentStudentId], approved: true });
+                        this.toast(`학부모 계정이 등록되었습니다. (초기 비밀번호: ${rawPw})`, 'success');
+                    } else {
+                        await DataStore.addTeacher({ name, loginId, password: bcrypt.hashSync(rawPw, 10), role: 'teacher', assignedStudentIds: [], approved: true });
+                        this.toast(`새 선생님이 등록되었습니다. (초기 비밀번호: ${rawPw})`, 'success');
+                    }
                 }
 
                 this.closeModal();

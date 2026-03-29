@@ -478,7 +478,50 @@ const DataStore = {
     },
 
     getPendingUsers() {
-        return this.getTeachers().filter(t => t.approved === false);
+        return this.getTeachers().filter(t => t.approved === false && t.role !== 'parent');
+    },
+
+    // === 업무 노트 (Tasks) - 선생/원장 할 일 관리 ===
+    // teachers.tasks JSON 필드에 저장 (DB 스키마 변경 없음)
+
+    getMyTasks() {
+        const user = this.getCurrentUser();
+        if (!user) return [];
+        const teacher = this.getTeacher(user.id);
+        return (teacher && teacher.tasks) ? [...teacher.tasks].sort((a, b) => {
+            if (a.completed !== b.completed) return a.completed ? 1 : -1;
+            return new Date(b.createdAt) - new Date(a.createdAt);
+        }) : [];
+    },
+
+    async addTask(content, studentId = null, dueDate = null) {
+        const user = this.getCurrentUser();
+        if (!user) return;
+        const teacher = this.getTeacher(user.id);
+        if (!teacher) return;
+        const tasks = teacher.tasks ? [...teacher.tasks] : [];
+        const newTask = { id: this.generateId(), content, studentId, dueDate, completed: false, createdAt: new Date().toISOString() };
+        tasks.push(newTask);
+        await this.updateTeacher(user.id, { tasks });
+        return newTask;
+    },
+
+    async updateTask(taskId, updates) {
+        const user = this.getCurrentUser();
+        if (!user) return;
+        const teacher = this.getTeacher(user.id);
+        if (!teacher) return;
+        const tasks = (teacher.tasks || []).map(t => t.id === taskId ? { ...t, ...updates } : t);
+        await this.updateTeacher(user.id, { tasks });
+    },
+
+    async deleteTask(taskId) {
+        const user = this.getCurrentUser();
+        if (!user) return;
+        const teacher = this.getTeacher(user.id);
+        if (!teacher) return;
+        const tasks = (teacher.tasks || []).filter(t => t.id !== taskId);
+        await this.updateTeacher(user.id, { tasks });
     },
 
     async approveUser(id) {

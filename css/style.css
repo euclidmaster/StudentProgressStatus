@@ -2238,3 +2238,24 @@ th.sortable i {
     .scope-select-group { flex-direction: column; }
     .scope-option { min-width: auto; }
 }
+
+/* === 업무 노트 (Tasks) === */
+.task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--gray-100);
+    transition: background 0.15s;
+}
+.task-item:hover { background: var(--gray-50); }
+.task-item:last-child { border-bottom: none; }
+.task-done .task-content { text-decoration: line-through; color: var(--gray-400); }
+.task-checkbox-label { padding-top: 2px; cursor: pointer; }
+.task-checkbox-label input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--primary); }
+.task-body { flex: 1; min-width: 0; }
+.task-content { font-size: 0.95rem; color: var(--gray-800); margin-bottom: 4px; word-break: break-word; }
+.task-meta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.role-tab-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--gray-200); background: white; cursor: pointer; font-size: 0.88rem; transition: all 0.15s; }
+.role-tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.role-tab-btn:hover:not(.active) { background: var(--gray-100); }
