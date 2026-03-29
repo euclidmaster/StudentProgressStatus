@@ -14,7 +14,8 @@ const DataStore = {
         BOARD_EVENTS: 'board_events',
         ATTENDANCE: 'attendance',
         HOMEWORK: 'homework',
-        EXAM_PLANS: 'exam_plans'
+        EXAM_PLANS: 'exam_plans',
+        CONSULTATIONS: 'consultations'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -31,7 +32,8 @@ const DataStore = {
         board_events: [],
         attendance: [],
         homework: [],
-        exam_plans: []
+        exam_plans: [],
+        consultations: []
     },
 
     _syncEnabled: true,
@@ -788,6 +790,26 @@ const DataStore = {
             return { ...item, completedBy };
         });
         return await this._update(this.TABLES.EXAM_PLANS, planId, { checklist });
+    },
+
+    // === CONSULTATIONS (상담 일지) ===
+    getConsultations() {
+        return this._getAll(this.TABLES.CONSULTATIONS)
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    },
+
+    getStudentConsultations(studentId) {
+        return this.getConsultations().filter(c => c.studentId === studentId);
+    },
+
+    async addConsultation(record) { return await this._add(this.TABLES.CONSULTATIONS, record); },
+    async deleteConsultation(id) { return await this._delete(this.TABLES.CONSULTATIONS, id); },
+
+    getUpcomingConsultations(teacherId) {
+        const today = new Date().toISOString().slice(0, 10);
+        return this.getConsultations()
+            .filter(c => c.nextDate && c.nextDate >= today && (!teacherId || c.teacherId === teacherId))
+            .sort((a, b) => (a.nextDate || '').localeCompare(b.nextDate || ''));
     },
 
 };

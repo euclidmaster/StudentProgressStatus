@@ -2295,6 +2295,37 @@ th.sortable i {
 .att-status-btn:hover { background: var(--gray-100); }
 .att-status-btn.active { font-weight: 600; }
 
+/* ===== 상담 일지 ===== */
+.consult-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--gray-100);
+    transition: background 0.12s;
+}
+.consult-item:last-child { border-bottom: none; }
+.consult-item:hover { background: var(--gray-50); }
+.consult-left { flex: 1; min-width: 0; }
+.consult-content {
+    font-size: 0.88rem;
+    color: var(--gray-700);
+    white-space: pre-line;
+    line-height: 1.6;
+    margin-bottom: 6px;
+}
+.consult-next {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 0.82rem;
+    background: #FFFBEB;
+    border-radius: 6px;
+    padding: 5px 10px;
+    margin-top: 6px;
+}
+
 /* ===== 시험 플래너 ===== */
 .exam-card {
     background: white;

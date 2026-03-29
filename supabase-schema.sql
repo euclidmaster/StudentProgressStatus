@@ -333,3 +333,24 @@ CREATE TABLE IF NOT EXISTS exam_plans (
 ALTER TABLE exam_plans ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon_all" ON exam_plans;
 CREATE POLICY "anon_all" ON exam_plans FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- 마이그레이션: 상담 일지 테이블 추가
+-- 아래 SQL을 Supabase SQL Editor에서 실행하세요
+-- ============================================
+CREATE TABLE IF NOT EXISTS consultations (
+    id TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL,
+    teacher_id TEXT DEFAULT '',
+    teacher_name TEXT DEFAULT '',
+    date TEXT NOT NULL,
+    type TEXT DEFAULT '학생상담',
+    content TEXT DEFAULT '',
+    next_date TEXT DEFAULT '',
+    next_memo TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+ALTER TABLE consultations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all" ON consultations;
+CREATE POLICY "anon_all" ON consultations FOR ALL TO anon USING (true) WITH CHECK (true);

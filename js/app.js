@@ -223,13 +223,19 @@ const App = {
             attendanceNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
         }
 
+        // 상담 일지 nav: 원장/선생만 표시 + 다음 상담 예정 배지
+        const consultNav = document.getElementById('nav-consultations');
+        if (consultNav) {
+            consultNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
+        }
+
         // Student/Parent role: hide management-heavy nav items
-        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance'];
+        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
             if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
                 item.style.display = 'none';
-            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance') {
+            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance' && view !== 'consultations') {
                 item.style.display = '';
             }
         });
@@ -413,7 +419,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', report: '월간 리포트', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', report: '월간 리포트', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -423,7 +429,7 @@ const App = {
         const viewTables = {
             'dashboard':      [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
             'students':       [],
-            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS],
+            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.CONSULTATIONS],
             'plans':          [T.PLANS],
             'progress':       [T.PLANS, T.PROGRESS],
             'comments':       [T.PLANS, T.COMMENTS],
@@ -434,6 +440,7 @@ const App = {
             'attendance':     [T.ATTENDANCE],
             'homework':       [T.HOMEWORK],
             'exam':           [T.EXAM_PLANS],
+            'consultations':  [T.CONSULTATIONS],
             'report':         [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.GRADES, T.COMMENTS],
             'teachers':       [],
         };
@@ -465,6 +472,7 @@ const App = {
             case 'attendance': this.renderAttendance(); break;
             case 'homework': this.renderHomework(); break;
             case 'exam': this.renderExam(); break;
+            case 'consultations': this.renderConsultations(data.studentId); break;
             case 'report': this.renderReport(data.studentId, data.ym); break;
             case 'teachers': this.renderTeachers(); break;
         }
@@ -944,6 +952,8 @@ const App = {
             ${this.renderAttendanceMiniCard(studentId, canEdit)}
 
             ${this.renderExamMiniCard(studentId)}
+
+            ${this.renderConsultationMiniCard(studentId, canEdit)}
 
             ${this.renderHomeworkMiniCard(studentId)}
 
@@ -2918,6 +2928,50 @@ const App = {
                 break;
             }
 
+            // 상담 일지 actions
+            case 'add-consultation': {
+                const studentId = (document.getElementById('consult-student-id') || {}).value || '';
+                if (!studentId) { this.toast('학생을 선택해주세요.', 'warning'); break; }
+                const content = (document.getElementById('consult-content') || {}).value || '';
+                if (!content.trim()) { this.toast('상담 내용을 입력해주세요.', 'warning'); break; }
+                const type = (document.getElementById('consult-type') || {}).value || '학생상담';
+                const date = (document.getElementById('consult-date') || {}).value || this.getLocalDateStr();
+                const nextDate = (document.getElementById('consult-next-date') || {}).value || '';
+                const nextMemo = (document.getElementById('consult-next-memo') || {}).value || '';
+                try {
+                    await DataStore.addConsultation({
+                        studentId,
+                        teacherId: this.currentUser ? this.currentUser.id : '',
+                        teacherName: this.currentUser ? this.currentUser.name : '',
+                        date, type,
+                        content: content.trim(),
+                        nextDate: nextDate || null,
+                        nextMemo: nextMemo.trim()
+                    });
+                    this.toast('상담이 기록되었습니다.', 'success');
+                    this.renderConsultations(this._consultStudentId);
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'delete-consultation': {
+                if (!confirm('이 상담 기록을 삭제하시겠습니까?')) break;
+                try {
+                    await DataStore.deleteConsultation(target.dataset.consultId);
+                    this.toast('삭제되었습니다.', 'success');
+                    if (this.currentView === 'consultations') this.renderConsultations(this._consultStudentId);
+                    else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'go-consultations': {
+                this._consultStudentId = target.dataset.studentId;
+                await DataStore._ensureLoaded(DataStore.TABLES.CONSULTATIONS);
+                this.navigate('consultations', { studentId: target.dataset.studentId });
+                break;
+            }
+
             // 시험 플래너 actions
             case 'exam-add-item': {
                 const container = document.getElementById('exam-checklist-rows');
@@ -3044,6 +3098,200 @@ const App = {
                 break;
             }
         }
+    },
+
+    // =========================================
+    //  VIEW: CONSULTATIONS (상담 일지)
+    // =========================================
+    renderConsultations(focusStudentId) {
+        const today = this.getLocalDateStr();
+        const students = this.getVisibleStudents();
+        const allConsults = DataStore.getConsultations();
+        const upcoming = DataStore.getUpcomingConsultations(
+            this.currentUser && this.currentUser.role === 'teacher' ? this.currentUser.id : null
+        );
+
+        // 필터: 선택된 학생 or 전체
+        const filterStudentId = focusStudentId || this._consultStudentId || '';
+        this._consultStudentId = filterStudentId;
+        const filtered = filterStudentId
+            ? allConsults.filter(c => c.studentId === filterStudentId)
+            : allConsults;
+
+        const TYPES = ['학생상담', '학부모상담', '기타'];
+        const TYPE_COLOR = { '학생상담': 'var(--primary)', '학부모상담': 'var(--success)', '기타': 'var(--gray-400)' };
+
+        const consultRow = (c) => {
+            const student = DataStore.getStudent(c.studentId);
+            return `
+            <div class="consult-item">
+                <div class="consult-left">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                        <span class="badge" style="background:${TYPE_COLOR[c.type]||'var(--gray-400)'};color:white;font-size:0.72rem">${this.escapeHtml(c.type)}</span>
+                        <span style="font-weight:600;font-size:0.9rem;color:var(--gray-800)">${this.escapeHtml(c.date)}</span>
+                        ${!filterStudentId && student ? `<span style="font-size:0.82rem;color:var(--primary)"><i class="fas fa-user-graduate"></i> ${this.escapeHtml(student.name)}</span>` : ''}
+                        <span style="font-size:0.78rem;color:var(--gray-400);margin-left:auto"><i class="fas fa-user-tie"></i> ${this.escapeHtml(c.teacherName || '')}</span>
+                    </div>
+                    <div class="consult-content">${this.escapeHtml(c.content)}</div>
+                    ${c.nextDate ? `
+                    <div class="consult-next">
+                        <i class="fas fa-arrow-right" style="color:var(--warning)"></i>
+                        <span style="font-weight:600;color:var(--warning)">다음 상담: ${c.nextDate}</span>
+                        ${c.nextMemo ? `<span style="color:var(--gray-500);font-size:0.82rem"> — ${this.escapeHtml(c.nextMemo)}</span>` : ''}
+                    </div>` : ''}
+                </div>
+                <button class="btn-icon" data-action="delete-consultation" data-consult-id="${c.id}" title="삭제" style="color:var(--danger);flex-shrink:0"><i class="fas fa-trash"></i></button>
+            </div>`;
+        };
+
+        // 학생 필터 선택
+        const studentFilter = `
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label style="font-weight:600">학생 필터</label>
+            <select id="consult-student-filter" class="form-control" style="max-width:180px">
+                <option value="">전체 학생</option>
+                ${students.map(s => `<option value="${s.id}" ${s.id === filterStudentId ? 'selected' : ''}>${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
+            </select>
+        </div>`;
+
+        const html = `
+        <!-- 다음 상담 예정 배너 -->
+        ${upcoming.length > 0 ? `
+        <div class="card" style="margin-bottom:16px;border-left:4px solid var(--warning)">
+            <div class="card-body" style="padding:14px 18px">
+                <div style="font-weight:700;color:var(--warning);margin-bottom:8px"><i class="fas fa-bell"></i> 다음 상담 예정 (${upcoming.length}건)</div>
+                ${upcoming.slice(0, 3).map(c => {
+                    const s = DataStore.getStudent(c.studentId);
+                    const diff = Math.ceil((new Date(c.nextDate) - new Date(today)) / 86400000);
+                    return `<div style="font-size:0.85rem;padding:3px 0;display:flex;gap:10px;align-items:center">
+                        <span style="font-weight:600;color:var(--warning);min-width:55px">D-${diff}</span>
+                        <span>${c.nextDate}</span>
+                        ${s ? `<span style="color:var(--primary)"><i class="fas fa-user-graduate"></i> ${this.escapeHtml(s.name)}</span>` : ''}
+                        ${c.nextMemo ? `<span style="color:var(--gray-500)">${this.escapeHtml(c.nextMemo)}</span>` : ''}
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>` : ''}
+
+        <!-- 상담 기록 추가 폼 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h2><i class="fas fa-plus"></i> 상담 기록 추가</h2></div>
+            <div class="card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>학생 <span class="required">*</span></label>
+                        <select id="consult-student-id" class="form-control">
+                            <option value="">학생 선택</option>
+                            ${students.map(s => `<option value="${s.id}" ${s.id === filterStudentId ? 'selected' : ''}>${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>상담 유형</label>
+                        <select id="consult-type" class="form-control">
+                            ${TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>상담 날짜</label>
+                        <input type="date" id="consult-date" class="form-control" value="${today}">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>상담 내용 <span class="required">*</span></label>
+                    <textarea id="consult-content" class="form-control" rows="3" placeholder="상담 내용을 입력하세요..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>다음 상담 예정일 <span style="color:var(--gray-400);font-size:0.78rem">(선택)</span></label>
+                        <input type="date" id="consult-next-date" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>다음 상담 메모 <span style="color:var(--gray-400);font-size:0.78rem">(선택)</span></label>
+                        <input type="text" id="consult-next-memo" class="form-control" placeholder="다음 상담 시 확인할 내용">
+                    </div>
+                </div>
+                <button class="btn btn-primary" data-action="add-consultation"><i class="fas fa-save"></i> 기록 저장</button>
+            </div>
+        </div>
+
+        <!-- 상담 기록 목록 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-history"></i> 상담 기록 (${filtered.length}건)</h2>
+                ${studentFilter}
+            </div>
+            <div class="card-body" style="padding:${filtered.length ? '0' : ''}">
+                ${filtered.length === 0
+                    ? '<div class="empty-state" style="padding:30px"><i class="fas fa-comments"></i><h3>상담 기록이 없습니다</h3></div>'
+                    : filtered.map(c => consultRow(c)).join('')}
+            </div>
+        </div>`;
+
+        document.getElementById('content-area').innerHTML = html;
+
+        // 학생 필터 이벤트
+        const sel = document.getElementById('consult-student-filter');
+        if (sel) {
+            sel.addEventListener('change', () => {
+                this._consultStudentId = sel.value;
+                this.renderConsultations();
+            });
+        }
+        this.updateConsultBadge();
+    },
+
+    // 상담 일지 배지 업데이트 (다음 상담 예정 건수)
+    updateConsultBadge() {
+        const badge = document.getElementById('consult-badge');
+        if (!badge) return;
+        const role = this.currentUser ? this.currentUser.role : '';
+        if (role === 'director' || role === 'teacher') {
+            const teacherId = role === 'teacher' ? this.currentUser.id : null;
+            const count = DataStore.getUpcomingConsultations(teacherId).length;
+            badge.textContent = count;
+            badge.style.display = count > 0 ? '' : 'none';
+        } else {
+            badge.style.display = 'none';
+        }
+    },
+
+    // 학생 상세 상담 미니카드
+    renderConsultationMiniCard(studentId, canEdit) {
+        const records = DataStore.getStudentConsultations(studentId);
+        const today = this.getLocalDateStr();
+        if (records.length === 0 && !canEdit) return '';
+
+        const latest = records[0];
+        const nextUpcoming = records.find(c => c.nextDate && c.nextDate >= today);
+
+        return `
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+                <h2><i class="fas fa-comments"></i> 상담 일지</h2>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <span class="badge badge-primary">총 ${records.length}회</span>
+                    ${canEdit ? `<button class="btn btn-sm btn-outline" data-action="go-consultations" data-student-id="${studentId}"><i class="fas fa-plus"></i> 상담 기록</button>` : ''}
+                </div>
+            </div>
+            <div class="card-body" style="padding:${records.length ? '12px 20px' : ''}">
+                ${records.length === 0
+                    ? '<div style="color:var(--gray-300);padding:8px 0;font-size:0.85rem">상담 기록이 없습니다.</div>'
+                    : `
+                    ${nextUpcoming ? `
+                    <div style="background:#FFFBEB;border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:10px">
+                        <div style="font-size:0.82rem;font-weight:600;color:var(--warning)"><i class="fas fa-bell"></i> 다음 상담 예정: ${nextUpcoming.nextDate}</div>
+                        ${nextUpcoming.nextMemo ? `<div style="font-size:0.78rem;color:var(--gray-600);margin-top:2px">${this.escapeHtml(nextUpcoming.nextMemo)}</div>` : ''}
+                    </div>` : ''}
+                    ${latest ? `
+                    <div style="font-size:0.85rem">
+                        <span style="color:var(--gray-400)">최근 상담</span>
+                        <span style="font-weight:600;margin-left:8px">${latest.date}</span>
+                        <span class="badge" style="background:${latest.type === '학부모상담' ? 'var(--success)' : 'var(--primary)'};color:white;font-size:0.68rem;margin-left:4px">${this.escapeHtml(latest.type)}</span>
+                        <div style="margin-top:4px;color:var(--gray-600);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${this.escapeHtml((latest.content || '').slice(0, 60))}${latest.content && latest.content.length > 60 ? '...' : ''}</div>
+                    </div>` : ''}
+                    `}
+            </div>
+        </div>`;
     },
 
     // =========================================
