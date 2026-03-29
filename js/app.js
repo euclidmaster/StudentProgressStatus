@@ -229,13 +229,19 @@ const App = {
             consultNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
         }
 
+        // 수업료 관리 nav: 원장만 표시
+        const tuitionNav = document.getElementById('nav-tuition');
+        if (tuitionNav) {
+            tuitionNav.style.display = role === 'director' ? '' : 'none';
+        }
+
         // Student/Parent role: hide management-heavy nav items
-        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations'];
+        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
             if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
                 item.style.display = 'none';
-            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance' && view !== 'consultations') {
+            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance' && view !== 'consultations' && view !== 'tuition') {
                 item.style.display = '';
             }
         });
@@ -375,6 +381,14 @@ const App = {
             });
         });
 
+        // Nav group toggle
+        document.querySelectorAll('.nav-group-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const group = document.getElementById(header.dataset.group);
+                if (group) group.classList.toggle('open');
+            });
+        });
+
         document.getElementById('sidebar-toggle').addEventListener('click', () => {
             const sb = document.getElementById('sidebar');
             sb.classList.toggle('show');
@@ -425,7 +439,21 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리' };
+        // Auto-expand the nav group containing the active view
+        const viewGroupMap = {
+            dashboard: 'navg-student', students: 'navg-student', 'student-detail': 'navg-student',
+            attendance: 'navg-student', consultations: 'navg-student', teachers: 'navg-student',
+            plans: 'navg-study', progress: 'navg-study', homework: 'navg-study',
+            exam: 'navg-study', comments: 'navg-study', report: 'navg-study',
+            grades: 'navg-ops', board: 'navg-ops', notifications: 'navg-ops',
+            messages: 'navg-ops', tasks: 'navg-ops', tuition: 'navg-ops'
+        };
+        const targetGroup = viewGroupMap[view];
+        if (targetGroup) {
+            document.getElementById(targetGroup)?.classList.add('open');
+        }
+
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -450,6 +478,7 @@ const App = {
             'notifications':  [T.HOMEWORK, T.EXAM_PLANS, T.CONSULTATIONS, T.ATTENDANCE, T.COMMENTS],
             'report':         [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.GRADES, T.COMMENTS],
             'teachers':       [],
+            'tuition':        [T.TUITION],
         };
 
         const needed = viewTables[view] || [];
@@ -483,6 +512,7 @@ const App = {
             case 'notifications': this.renderNotifications(); break;
             case 'report': this.renderReport(data.studentId, data.ym); break;
             case 'teachers': this.renderTeachers(); break;
+            case 'tuition': this.renderTuition(); break;
         }
     },
 
@@ -2984,6 +3014,83 @@ const App = {
                 this.navigate('notifications');
                 break;
 
+            // 수업료 관리 actions
+            case 'tuition-prev-month': {
+                const [ty, tm] = (this._tuitionYM || new Date().toISOString().slice(0,7)).split('-').map(Number);
+                const d = new Date(ty, tm - 2, 1);
+                this._tuitionYM = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                this.renderTuition();
+                break;
+            }
+            case 'tuition-next-month': {
+                const [ty, tm] = (this._tuitionYM || new Date().toISOString().slice(0,7)).split('-').map(Number);
+                const d = new Date(ty, tm, 1);
+                this._tuitionYM = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                this.renderTuition();
+                break;
+            }
+            case 'tuition-edit':
+                this.openTuitionEditModal(target.dataset.studentId, target.dataset.ym);
+                break;
+
+            case 'tuition-bulk-set':
+                this.openTuitionBulkModal(target.dataset.ym);
+                break;
+
+            case 'tuition-save': {
+                const amount = parseInt(document.getElementById('tuition-amount').value) || 0;
+                const paidAmount = parseInt(document.getElementById('tuition-paid').value) || 0;
+                const paidDate = document.getElementById('tuition-paid-date').value;
+                const note = document.getElementById('tuition-note').value.trim();
+                let status = '미납';
+                if (amount > 0 && paidAmount >= amount) status = '납부완료';
+                else if (paidAmount > 0) status = '부분납부';
+                try {
+                    await DataStore.upsertTuition({
+                        studentId: target.dataset.studentId,
+                        yearMonth: target.dataset.ym,
+                        amount, paidAmount, status, paidDate, note
+                    });
+                    this.closeModal();
+                    this.renderTuition();
+                    this.toast('저장되었습니다.', 'success');
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+            case 'tuition-delete': {
+                if (!confirm('이 납부 기록을 삭제하시겠습니까?')) break;
+                try {
+                    await DataStore._delete(DataStore.TABLES.TUITION, target.dataset.id);
+                    this.closeModal();
+                    this.renderTuition();
+                    this.toast('삭제되었습니다.', 'success');
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                break;
+            }
+            case 'tuition-bulk-save': {
+                const bulkAmount = parseInt(document.getElementById('tuition-bulk-amount').value) || 0;
+                if (!bulkAmount) { this.toast('금액을 입력해주세요.', 'warning'); break; }
+                const allStudents = DataStore.getStudents().filter(s => s.status !== '퇴원');
+                try {
+                    for (const s of allStudents) {
+                        const existing = DataStore.getStudentTuitionRecord(s.id, target.dataset.ym);
+                        await DataStore.upsertTuition({
+                            studentId: s.id,
+                            yearMonth: target.dataset.ym,
+                            amount: bulkAmount,
+                            paidAmount: existing?.paidAmount || 0,
+                            status: existing?.status || '미납',
+                            paidDate: existing?.paidDate || '',
+                            note: existing?.note || ''
+                        });
+                    }
+                    this.closeModal();
+                    this.renderTuition();
+                    this.toast(`${allStudents.length}명에게 수업료가 설정되었습니다.`, 'success');
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
             // 시험 플래너 actions
             case 'exam-add-item': {
                 const container = document.getElementById('exam-checklist-rows');
@@ -3919,6 +4026,166 @@ const App = {
         } else {
             badge.style.display = 'none';
         }
+    },
+
+    // =========================================
+    //  VIEW: TUITION (수업료 관리)
+    // =========================================
+    renderTuition() {
+        const role = this.currentUser?.role;
+        if (role !== 'director') {
+            document.getElementById('content-area').innerHTML =
+                '<div class="card"><div class="card-body"><p style="color:var(--gray-500)">원장만 접근할 수 있습니다.</p></div></div>';
+            return;
+        }
+
+        const today = new Date();
+        if (!this._tuitionYM) {
+            this._tuitionYM = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+        }
+        const ym = this._tuitionYM;
+        const [year, month] = ym.split('-').map(Number);
+        const ymLabel = `${year}년 ${month}월`;
+
+        const students = DataStore.getStudents().filter(s => s.status !== '퇴원');
+        const recMap = {};
+        DataStore.getTuitionByMonth(ym).forEach(r => recMap[r.studentId] = r);
+
+        let totalBilled = 0, totalPaid = 0, totalUnpaid = 0, paidCount = 0;
+        students.forEach(s => {
+            const rec = recMap[s.id];
+            const amount = rec?.amount || 0;
+            const paidAmount = rec?.paidAmount || 0;
+            totalBilled += amount;
+            totalPaid += paidAmount;
+            totalUnpaid += Math.max(0, amount - paidAmount);
+            if (rec?.status === '납부완료') paidCount++;
+        });
+        const billed = students.filter(s => recMap[s.id]?.amount > 0).length;
+        const payRate = billed > 0 ? Math.round((paidCount / billed) * 100) : 0;
+        const fmt = n => Number(n).toLocaleString('ko-KR');
+
+        const rows = students.map(s => {
+            const rec = recMap[s.id];
+            const amount = rec?.amount || 0;
+            const paidAmount = rec?.paidAmount || 0;
+            const status = rec?.status || (amount > 0 ? '미납' : null);
+            const paidDate = rec?.paidDate || '';
+            const note = this.escapeHtml(rec?.note || '');
+
+            let badge = '';
+            if (status === '납부완료') badge = `<span class="badge badge-success">납부완료</span>`;
+            else if (status === '부분납부') badge = `<span class="badge badge-warning">부분납부</span>`;
+            else if (amount > 0) badge = `<span class="badge badge-danger">미납</span>`;
+            else badge = `<span class="badge" style="background:var(--gray-100);color:var(--gray-400)">미청구</span>`;
+
+            return `<tr>
+                <td><strong>${this.escapeHtml(s.name)}</strong><br><small class="text-muted">${this.escapeHtml((s.grade||'') + ' ' + (s.className||''))}</small></td>
+                <td class="tuition-num">${amount > 0 ? fmt(amount)+'원' : '-'}</td>
+                <td class="tuition-num">${paidAmount > 0 ? fmt(paidAmount)+'원' : '-'}</td>
+                <td>${badge}</td>
+                <td style="color:var(--gray-600);font-size:0.85rem">${paidDate || '-'}</td>
+                <td class="tuition-note">${note}</td>
+                <td><button class="btn btn-sm btn-outline" data-action="tuition-edit" data-student-id="${s.id}" data-ym="${ym}"><i class="fas fa-edit"></i></button></td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('content-area').innerHTML = `
+        <div class="view-container">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:12px">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <button class="btn btn-outline btn-sm" data-action="tuition-prev-month"><i class="fas fa-chevron-left"></i></button>
+                    <h2 style="font-size:1.25rem;font-weight:700;color:var(--gray-800)">${ymLabel} 수업료</h2>
+                    <button class="btn btn-outline btn-sm" data-action="tuition-next-month"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <button class="btn btn-primary btn-sm" data-action="tuition-bulk-set" data-ym="${ym}"><i class="fas fa-layer-group"></i> 일괄 금액 설정</button>
+            </div>
+
+            <div class="report-summary-grid" style="margin-bottom:1.5rem">
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--primary-bg);color:var(--primary)"><i class="fas fa-file-invoice-dollar"></i></div>
+                    <div><div class="report-stat-label">총 청구액</div><div class="report-stat-value">${fmt(totalBilled)}원</div></div>
+                </div>
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--success-bg);color:var(--success)"><i class="fas fa-check-circle"></i></div>
+                    <div><div class="report-stat-label">납부 완료</div><div class="report-stat-value">${fmt(totalPaid)}원</div></div>
+                </div>
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--danger-bg);color:var(--danger)"><i class="fas fa-exclamation-circle"></i></div>
+                    <div><div class="report-stat-label">미납 금액</div><div class="report-stat-value">${fmt(totalUnpaid)}원</div></div>
+                </div>
+                <div class="report-stat-card">
+                    <div class="report-stat-icon" style="background:var(--info-bg);color:var(--info)"><i class="fas fa-percent"></i></div>
+                    <div><div class="report-stat-label">납부율</div><div class="report-stat-value">${payRate}%</div></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body" style="padding:0;overflow-x:auto">
+                    <table class="tuition-table">
+                        <thead><tr>
+                            <th>학생</th><th>청구액</th><th>납부액</th><th>상태</th><th>납부일</th><th>메모</th><th></th>
+                        </tr></thead>
+                        <tbody>${students.length === 0
+                            ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--gray-400)">등록된 학생이 없습니다</td></tr>'
+                            : rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    },
+
+    openTuitionEditModal(studentId, ym) {
+        const student = DataStore.getStudent(studentId);
+        if (!student) return;
+        const rec = DataStore.getStudentTuitionRecord(studentId, ym);
+        const amount = rec?.amount || 0;
+        const paidAmount = rec?.paidAmount || 0;
+        const paidDate = rec?.paidDate || '';
+        const note = rec?.note || '';
+        const [y, m] = ym.split('-').map(Number);
+
+        this.openModal(`${this.escapeHtml(student.name)} — ${y}년 ${m}월 수업료`, `
+            <div class="form-group">
+                <label>청구 금액 (원)</label>
+                <input type="number" class="form-control" id="tuition-amount" value="${amount}" min="0" step="10000" placeholder="0">
+            </div>
+            <div class="form-group">
+                <label>납부 금액 (원)</label>
+                <input type="number" class="form-control" id="tuition-paid" value="${paidAmount}" min="0" step="10000" placeholder="0">
+            </div>
+            <div class="form-group">
+                <label>납부일</label>
+                <input type="date" class="form-control" id="tuition-paid-date" value="${paidDate}">
+            </div>
+            <div class="form-group">
+                <label>메모</label>
+                <input type="text" class="form-control" id="tuition-note" value="${this.escapeHtml(note)}" placeholder="메모 (선택)">
+            </div>
+            <div style="display:flex;gap:8px;margin-top:1rem">
+                <button class="btn btn-primary" data-action="tuition-save" data-student-id="${studentId}" data-ym="${ym}" style="flex:1">
+                    <i class="fas fa-save"></i> 저장
+                </button>
+                ${rec ? `<button class="btn btn-outline" data-action="tuition-delete" data-id="${rec.id}" style="color:var(--danger);border-color:var(--danger)"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+        `);
+    },
+
+    openTuitionBulkModal(ym) {
+        const [y, m] = ym.split('-').map(Number);
+        this.openModal(`${y}년 ${m}월 — 일괄 수업료 설정`, `
+            <p style="color:var(--gray-500);margin-bottom:1rem;font-size:0.9rem">
+                모든 재원 학생에게 동일한 수업료를 청구합니다.<br>이미 설정된 학생의 청구액은 덮어쓰고, 납부 정보는 유지됩니다.
+            </p>
+            <div class="form-group">
+                <label>수업료 (원)</label>
+                <input type="number" class="form-control" id="tuition-bulk-amount" min="0" step="10000" placeholder="예: 350000" autofocus>
+            </div>
+            <button class="btn btn-primary" data-action="tuition-bulk-save" data-ym="${ym}" style="width:100%;margin-top:0.5rem">
+                <i class="fas fa-check"></i> 전체 적용
+            </button>
+        `);
     },
 
     // =========================================

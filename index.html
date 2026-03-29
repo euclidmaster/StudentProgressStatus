@@ -130,75 +130,111 @@
                 </div>
             </div>
             <nav class="sidebar-nav">
-                <a href="#" class="nav-item active" data-view="dashboard">
-                    <i class="fas fa-chart-pie"></i>
-                    <span>대시보드</span>
-                </a>
-                <a href="#" class="nav-item" data-view="students">
-                    <i class="fas fa-users"></i>
-                    <span>학생 관리</span>
-                </a>
-                <a href="#" class="nav-item" data-view="plans">
-                    <i class="fas fa-book-open"></i>
-                    <span>학습 계획</span>
-                </a>
-                <a href="#" class="nav-item" data-view="progress">
-                    <i class="fas fa-chart-line"></i>
-                    <span>진도 현황</span>
-                </a>
-                <a href="#" class="nav-item" data-view="comments">
-                    <i class="fas fa-comments"></i>
-                    <span>코멘트</span>
-                </a>
-                <a href="#" class="nav-item" data-view="grades">
-                    <i class="fas fa-trophy"></i>
-                    <span>성적 관리</span>
-                </a>
-                <a href="#" class="nav-item" data-view="board">
-                    <i class="fas fa-clipboard-list"></i>
-                    <span>학원 게시판</span>
-                </a>
-                <a href="#" id="nav-homework" class="nav-item" data-view="homework">
-                    <i class="fas fa-tasks"></i>
-                    <span>숙제 관리</span>
-                    <span id="homework-badge" class="unread-badge" style="display:none"></span>
-                </a>
-                <a href="#" id="nav-notifications" class="nav-item" data-view="notifications">
-                    <i class="fas fa-bell"></i>
-                    <span>알림 센터</span>
-                    <span id="notif-nav-badge" class="unread-badge" style="display:none"></span>
-                </a>
-                <a href="#" id="nav-consultations" class="nav-item" data-view="consultations" style="display:none">
-                    <i class="fas fa-comments"></i>
-                    <span>상담 일지</span>
-                    <span id="consult-badge" class="unread-badge" style="display:none"></span>
-                </a>
-                <a href="#" id="nav-exam" class="nav-item" data-view="exam">
-                    <i class="fas fa-clipboard-list"></i>
-                    <span>시험 플래너</span>
-                    <span id="exam-badge" class="unread-badge" style="display:none"></span>
-                </a>
-                <a href="#" id="nav-report" class="nav-item" data-view="report">
-                    <i class="fas fa-file-alt"></i>
-                    <span>월간 리포트</span>
-                </a>
-                <a href="#" id="nav-attendance" class="nav-item" data-view="attendance" style="display:none">
-                    <i class="fas fa-calendar-check"></i>
-                    <span>출석 관리</span>
-                </a>
-                <a href="#" id="nav-tasks" class="nav-item" data-view="tasks" style="display:none">
-                    <i class="fas fa-check-square"></i>
-                    <span>업무 노트</span>
-                </a>
-                <a href="#" id="nav-teachers" class="nav-item" data-view="teachers" style="display:none">
-                    <i class="fas fa-chalkboard-teacher"></i>
-                    <span>선생님 관리</span>
-                </a>
-                <a href="#" class="nav-item" data-view="messages">
-                    <i class="fas fa-envelope"></i>
-                    <span>내부 소통</span>
-                    <span id="unread-badge" class="unread-badge" style="display:none"></span>
-                </a>
+                <!-- Group 1: 학생 -->
+                <div class="nav-group open" id="navg-student">
+                    <button class="nav-group-header" data-group="navg-student">
+                        <i class="fas fa-user-graduate"></i>
+                        <span>학생</span>
+                        <i class="fas fa-chevron-down nav-group-arrow"></i>
+                    </button>
+                    <div class="nav-group-items">
+                        <a href="#" class="nav-item active" data-view="dashboard">
+                            <i class="fas fa-chart-pie"></i>
+                            <span>대시보드</span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="students">
+                            <i class="fas fa-users"></i>
+                            <span>학생 관리</span>
+                        </a>
+                        <a href="#" id="nav-attendance" class="nav-item" data-view="attendance" style="display:none">
+                            <i class="fas fa-calendar-check"></i>
+                            <span>출석 관리</span>
+                        </a>
+                        <a href="#" id="nav-consultations" class="nav-item" data-view="consultations" style="display:none">
+                            <i class="fas fa-comments"></i>
+                            <span>상담 일지</span>
+                            <span id="consult-badge" class="unread-badge" style="display:none"></span>
+                        </a>
+                        <a href="#" id="nav-teachers" class="nav-item" data-view="teachers" style="display:none">
+                            <i class="fas fa-chalkboard-teacher"></i>
+                            <span>선생님 관리</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Group 2: 학습 -->
+                <div class="nav-group open" id="navg-study">
+                    <button class="nav-group-header" data-group="navg-study">
+                        <i class="fas fa-book-open"></i>
+                        <span>학습</span>
+                        <i class="fas fa-chevron-down nav-group-arrow"></i>
+                    </button>
+                    <div class="nav-group-items">
+                        <a href="#" class="nav-item" data-view="plans">
+                            <i class="fas fa-book-open"></i>
+                            <span>학습 계획</span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="progress">
+                            <i class="fas fa-chart-line"></i>
+                            <span>진도 현황</span>
+                        </a>
+                        <a href="#" id="nav-homework" class="nav-item" data-view="homework">
+                            <i class="fas fa-tasks"></i>
+                            <span>숙제 관리</span>
+                            <span id="homework-badge" class="unread-badge" style="display:none"></span>
+                        </a>
+                        <a href="#" id="nav-exam" class="nav-item" data-view="exam">
+                            <i class="fas fa-clipboard-check"></i>
+                            <span>시험 플래너</span>
+                            <span id="exam-badge" class="unread-badge" style="display:none"></span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="comments">
+                            <i class="fas fa-comments"></i>
+                            <span>코멘트</span>
+                        </a>
+                        <a href="#" id="nav-report" class="nav-item" data-view="report">
+                            <i class="fas fa-file-alt"></i>
+                            <span>월간 리포트</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Group 3: 운영 -->
+                <div class="nav-group open" id="navg-ops">
+                    <button class="nav-group-header" data-group="navg-ops">
+                        <i class="fas fa-cog"></i>
+                        <span>운영</span>
+                        <i class="fas fa-chevron-down nav-group-arrow"></i>
+                    </button>
+                    <div class="nav-group-items">
+                        <a href="#" class="nav-item" data-view="grades">
+                            <i class="fas fa-trophy"></i>
+                            <span>성적 관리</span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="board">
+                            <i class="fas fa-clipboard-list"></i>
+                            <span>학원 게시판</span>
+                        </a>
+                        <a href="#" id="nav-notifications" class="nav-item" data-view="notifications">
+                            <i class="fas fa-bell"></i>
+                            <span>알림 센터</span>
+                            <span id="notif-nav-badge" class="unread-badge" style="display:none"></span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="messages">
+                            <i class="fas fa-envelope"></i>
+                            <span>내부 소통</span>
+                            <span id="unread-badge" class="unread-badge" style="display:none"></span>
+                        </a>
+                        <a href="#" id="nav-tasks" class="nav-item" data-view="tasks" style="display:none">
+                            <i class="fas fa-check-square"></i>
+                            <span>업무 노트</span>
+                        </a>
+                        <a href="#" id="nav-tuition" class="nav-item" data-view="tuition" style="display:none">
+                            <i class="fas fa-won-sign"></i>
+                            <span>수업료 관리</span>
+                        </a>
+                    </div>
+                </div>
             </nav>
 
         </aside>

@@ -354,3 +354,23 @@ CREATE TABLE IF NOT EXISTS consultations (
 ALTER TABLE consultations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon_all" ON consultations;
 CREATE POLICY "anon_all" ON consultations FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- 마이그레이션: 수업료 관리 테이블 추가
+-- 아래 SQL을 Supabase SQL Editor에서 실행하세요
+-- ============================================
+CREATE TABLE IF NOT EXISTS tuition (
+    id TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL,
+    year_month TEXT NOT NULL,       -- 'YYYY-MM' 형식
+    amount INTEGER DEFAULT 0,       -- 청구 금액
+    paid_amount INTEGER DEFAULT 0,  -- 납부 금액
+    status TEXT DEFAULT '미납',     -- '납부완료' | '미납' | '부분납부'
+    paid_date TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+ALTER TABLE tuition ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all" ON tuition;
+CREATE POLICY "anon_all" ON tuition FOR ALL TO anon USING (true) WITH CHECK (true);

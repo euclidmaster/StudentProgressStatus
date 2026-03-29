@@ -15,7 +15,8 @@ const DataStore = {
         ATTENDANCE: 'attendance',
         HOMEWORK: 'homework',
         EXAM_PLANS: 'exam_plans',
-        CONSULTATIONS: 'consultations'
+        CONSULTATIONS: 'consultations',
+        TUITION: 'tuition'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -33,7 +34,8 @@ const DataStore = {
         attendance: [],
         homework: [],
         exam_plans: [],
-        consultations: []
+        consultations: [],
+        tuition: []
     },
 
     _syncEnabled: true,
@@ -810,6 +812,27 @@ const DataStore = {
         return this.getConsultations()
             .filter(c => c.nextDate && c.nextDate >= today && (!teacherId || c.teacherId === teacherId))
             .sort((a, b) => (a.nextDate || '').localeCompare(b.nextDate || ''));
+    },
+
+    // === TUITION (수업료 관리) ===
+    getTuition() { return this._getAll(this.TABLES.TUITION); },
+
+    getTuitionByMonth(yearMonth) {
+        return this.getTuition().filter(t => t.yearMonth === yearMonth);
+    },
+
+    getStudentTuitionRecord(studentId, yearMonth) {
+        return this.getTuition().find(t => t.studentId === studentId && t.yearMonth === yearMonth) || null;
+    },
+
+    async upsertTuition(record) {
+        const existing = this.getStudentTuitionRecord(record.studentId, record.yearMonth);
+        if (existing) {
+            const { studentId, yearMonth, ...updates } = record;
+            return await this._update(this.TABLES.TUITION, existing.id, updates);
+        } else {
+            return await this._add(this.TABLES.TUITION, record);
+        }
     },
 
 };
