@@ -249,6 +249,7 @@ const App = {
             this.navigate('dashboard');
         }
         this.updateUnreadBadge();
+        this.updateNotificationBadge();
     },
 
     handleLogout() {
@@ -399,6 +400,11 @@ const App = {
             this.handleLogout();
         });
 
+        const bellBtn = document.getElementById('btn-notifications');
+        if (bellBtn) {
+            bellBtn.addEventListener('click', () => this.navigate('notifications'));
+        }
+
         document.getElementById('global-search').addEventListener('input', (e) => {
             if (this.currentView === 'students') this.renderStudents(e.target.value);
         });
@@ -419,7 +425,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', report: '월간 리포트', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -441,6 +447,7 @@ const App = {
             'homework':       [T.HOMEWORK],
             'exam':           [T.EXAM_PLANS],
             'consultations':  [T.CONSULTATIONS],
+            'notifications':  [T.HOMEWORK, T.EXAM_PLANS, T.CONSULTATIONS, T.ATTENDANCE, T.COMMENTS],
             'report':         [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.GRADES, T.COMMENTS],
             'teachers':       [],
         };
@@ -473,6 +480,7 @@ const App = {
             case 'homework': this.renderHomework(); break;
             case 'exam': this.renderExam(); break;
             case 'consultations': this.renderConsultations(data.studentId); break;
+            case 'notifications': this.renderNotifications(); break;
             case 'report': this.renderReport(data.studentId, data.ym); break;
             case 'teachers': this.renderTeachers(); break;
         }
@@ -2972,6 +2980,10 @@ const App = {
                 break;
             }
 
+            case 'go-notifications':
+                this.navigate('notifications');
+                break;
+
             // 시험 플래너 actions
             case 'exam-add-item': {
                 const container = document.getElementById('exam-checklist-rows');
@@ -3098,6 +3110,163 @@ const App = {
                 break;
             }
         }
+    },
+
+    // =========================================
+    //  NOTIFICATIONS (알림 센터)
+    // =========================================
+    generateNotifications() {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const today = this.getLocalDateStr();
+        const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().slice(0, 10);
+        const in3 = new Date(new Date(today).getTime() + 3 * 86400000).toISOString().slice(0, 10);
+        const in7 = new Date(new Date(today).getTime() + 7 * 86400000).toISOString().slice(0, 10);
+        const notifs = [];
+
+        if (role === 'student') {
+            const sid = this.currentUser.studentId;
+
+            // 미완료 숙제 마감 임박
+            (DataStore._cache['homework'] || [])
+                .filter(h => {
+                    const ids = h.studentIds || [];
+                    return (ids.length === 0 || ids.includes(sid)) && h.dueDate && !(h.completedBy || []).includes(sid);
+                })
+                .forEach(h => {
+                    const diff = Math.ceil((new Date(h.dueDate) - new Date(today)) / 86400000);
+                    if (diff <= 1) {
+                        notifs.push({ urgent: true, icon: 'fa-tasks', color: diff < 0 ? 'var(--danger)' : 'var(--warning)', title: diff < 0 ? '기한 만료 숙제' : diff === 0 ? '오늘 마감 숙제' : '내일 마감 숙제', desc: h.title, date: h.dueDate });
+                    }
+                });
+
+            // 시험 D-3 이내
+            (DataStore._cache['exam_plans'] || [])
+                .filter(ep => { const ids = ep.studentIds || []; return (ids.length === 0 || ids.includes(sid)) && ep.examDate && ep.examDate >= today && ep.examDate <= in3; })
+                .forEach(ep => {
+                    const diff = Math.ceil((new Date(ep.examDate) - new Date(today)) / 86400000);
+                    notifs.push({ urgent: diff <= 1, icon: 'fa-clipboard-list', color: diff === 0 ? 'var(--danger)' : 'var(--warning)', title: diff === 0 ? 'D-DAY 시험' : `D-${diff} 시험 임박`, desc: ep.examName, date: ep.examDate });
+                });
+
+            // 최근 7일 코멘트
+            const week7ago = new Date(new Date(today).getTime() - 7 * 86400000).toISOString().slice(0, 10);
+            const recentC = (DataStore._cache['comments'] || []).filter(c => c.studentId === sid && (c.createdAt || '') >= week7ago && Permissions.canViewComment(c));
+            if (recentC.length > 0) {
+                notifs.push({ urgent: false, icon: 'fa-comment', color: 'var(--primary)', title: `새 코멘트 ${recentC.length}개`, desc: '최근 7일간 새로운 코멘트가 있습니다', date: null });
+            }
+
+        } else {
+            const students = this.getVisibleStudents();
+            const teacherId = role === 'teacher' ? this.currentUser.id : null;
+
+            // 마감 D-1 이하 미완료 숙제
+            (DataStore._cache['homework'] || [])
+                .filter(h => h.dueDate && h.dueDate >= today && h.dueDate <= tomorrow)
+                .forEach(h => {
+                    const total = h.studentIds && h.studentIds.length > 0 ? h.studentIds.length : students.length;
+                    const done = (h.completedBy || []).length;
+                    if (done < total) {
+                        const diff = Math.ceil((new Date(h.dueDate) - new Date(today)) / 86400000);
+                        notifs.push({ urgent: diff === 0, icon: 'fa-tasks', color: diff === 0 ? 'var(--danger)' : 'var(--warning)', title: diff === 0 ? '오늘 마감 숙제' : '내일 마감 숙제', desc: `${h.title} — ${done}/${total}명 완료`, date: h.dueDate });
+                    }
+                });
+
+            // 시험 D-3 이내
+            (DataStore._cache['exam_plans'] || [])
+                .filter(ep => ep.examDate && ep.examDate >= today && ep.examDate <= in3)
+                .forEach(ep => {
+                    const diff = Math.ceil((new Date(ep.examDate) - new Date(today)) / 86400000);
+                    notifs.push({ urgent: diff <= 1, icon: 'fa-clipboard-list', color: diff === 0 ? 'var(--danger)' : 'var(--warning)', title: diff === 0 ? 'D-DAY 시험' : `D-${diff} 시험 임박`, desc: ep.examName, date: ep.examDate });
+                });
+
+            // 다음 상담 D-3 이내
+            (DataStore._cache['consultations'] || [])
+                .filter(c => c.nextDate && c.nextDate >= today && c.nextDate <= in3 && (!teacherId || c.teacherId === teacherId))
+                .sort((a, b) => a.nextDate.localeCompare(b.nextDate))
+                .forEach(c => {
+                    const s = DataStore.getStudent(c.studentId);
+                    const diff = Math.ceil((new Date(c.nextDate) - new Date(today)) / 86400000);
+                    notifs.push({ urgent: diff === 0, icon: 'fa-comments', color: 'var(--success)', title: diff === 0 ? '오늘 상담 예정' : `D-${diff} 상담 예정`, desc: (s ? s.name : '') + (c.nextMemo ? ` — ${c.nextMemo}` : ''), date: c.nextDate });
+                });
+
+            // 출석 미입력 (데이터가 로드된 경우만)
+            if (DataStore._loaded.has(DataStore.TABLES.ATTENDANCE)) {
+                const attended = new Set((DataStore._cache['attendance'] || []).filter(a => a.date === today).map(a => a.studentId));
+                const notEntered = students.filter(s => !attended.has(s.id));
+                if (notEntered.length > 0) {
+                    notifs.push({ urgent: false, icon: 'fa-calendar-check', color: 'var(--info)', title: `오늘 출석 미입력 ${notEntered.length}명`, desc: notEntered.map(s => s.name).join(', '), date: today });
+                }
+            }
+
+            // 미완료 숙제 있는 학생 (7일 이내 마감)
+            if (DataStore._loaded.has(DataStore.TABLES.HOMEWORK)) {
+                const urgentHw = (DataStore._cache['homework'] || []).filter(h => h.dueDate && h.dueDate >= today && h.dueDate <= in7);
+                if (urgentHw.length > 0) {
+                    const totalPending = urgentHw.reduce((sum, h) => {
+                        const total = h.studentIds && h.studentIds.length > 0 ? h.studentIds.length : students.length;
+                        return sum + (total - (h.completedBy || []).length);
+                    }, 0);
+                    if (totalPending > 0) {
+                        notifs.push({ urgent: false, icon: 'fa-tasks', color: 'var(--primary)', title: `7일 이내 마감 숙제 미완료`, desc: `${urgentHw.length}개 숙제 중 미완료 ${totalPending}건`, date: null });
+                    }
+                }
+            }
+        }
+
+        return notifs.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+    },
+
+    updateNotificationBadge() {
+        const count = this.generateNotifications().filter(n => n.urgent).length;
+        ['notif-header-badge', 'notif-nav-badge'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = count;
+            el.style.display = count > 0 ? '' : 'none';
+        });
+    },
+
+    renderNotifications() {
+        const notifs = this.generateNotifications();
+        const urgent = notifs.filter(n => n.urgent);
+        const normal = notifs.filter(n => !n.urgent);
+
+        const notifCard = (n) => `
+        <div class="notif-item ${n.urgent ? 'notif-urgent' : ''}">
+            <div class="notif-icon" style="background:${n.color}1a;color:${n.color}">
+                <i class="fas ${n.icon}"></i>
+            </div>
+            <div class="notif-body">
+                <div class="notif-title">${this.escapeHtml(n.title)}</div>
+                <div class="notif-desc">${this.escapeHtml(n.desc || '')}</div>
+                ${n.date ? `<div class="notif-date"><i class="fas fa-clock"></i> ${n.date}</div>` : ''}
+            </div>
+            ${n.urgent ? '<span class="notif-dot"></span>' : ''}
+        </div>`;
+
+        const html = `
+        ${urgent.length > 0 ? `
+        <div class="card" style="margin-bottom:16px;border-left:4px solid var(--danger)">
+            <div class="card-header"><h2><i class="fas fa-exclamation-circle" style="color:var(--danger)"></i> 긴급 알림 (${urgent.length})</h2></div>
+            <div class="card-body" style="padding:0">${urgent.map(n => notifCard(n)).join('')}</div>
+        </div>` : ''}
+
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-bell" style="color:var(--primary)"></i> 알림 ${normal.length > 0 ? `(${normal.length})` : ''}</h2></div>
+            <div class="card-body" style="padding:${normal.length ? '0' : ''}">
+                ${normal.length === 0 && urgent.length === 0
+                    ? '<div class="empty-state" style="padding:40px"><i class="fas fa-check-circle" style="color:var(--success)"></i><h3>새로운 알림이 없습니다</h3><p>모든 일정이 정상입니다!</p></div>'
+                    : normal.length === 0
+                        ? '<div style="color:var(--gray-300);padding:16px;text-align:center;font-size:0.88rem">추가 알림이 없습니다</div>'
+                        : normal.map(n => notifCard(n)).join('')}
+            </div>
+        </div>
+
+        <div style="text-align:center;padding:16px 0;font-size:0.78rem;color:var(--gray-300)">
+            <i class="fas fa-info-circle"></i> 알림은 현재 로드된 데이터 기준으로 생성됩니다. 최신 데이터를 보려면 해당 메뉴를 방문하세요.
+        </div>`;
+
+        document.getElementById('content-area').innerHTML = html;
+        this.updateNotificationBadge();
     },
 
     // =========================================
