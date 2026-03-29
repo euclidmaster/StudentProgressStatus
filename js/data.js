@@ -12,7 +12,8 @@ const DataStore = {
         GRADES: 'grades',
         BOARD_POSTS: 'board_posts',
         BOARD_EVENTS: 'board_events',
-        ATTENDANCE: 'attendance'
+        ATTENDANCE: 'attendance',
+        HOMEWORK: 'homework'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -27,7 +28,8 @@ const DataStore = {
         grades: [],
         board_posts: [],
         board_events: [],
-        attendance: []
+        attendance: [],
+        homework: []
     },
 
     _syncEnabled: true,
@@ -718,6 +720,42 @@ const DataStore = {
     getEventsForMonth(year, month) {
         const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
         return this.getBoardEvents().filter(e => (e.date || '').startsWith(prefix));
+    },
+
+    // === HOMEWORK (숙제 관리) ===
+    getHomework() {
+        return this._getAll(this.TABLES.HOMEWORK)
+            .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+    },
+
+    // 특정 학생에게 할당된 숙제 (studentIds가 비어있으면 전체 공개)
+    getHomeworkForStudent(studentId) {
+        return this.getHomework().filter(h => {
+            const ids = h.studentIds || [];
+            return ids.length === 0 || ids.includes(studentId);
+        });
+    },
+
+    isHomeworkCompletedBy(hw, studentId) {
+        return (hw.completedBy || []).includes(studentId);
+    },
+
+    async addHomework(hw) { return await this._add(this.TABLES.HOMEWORK, hw); },
+    async deleteHomework(id) { return await this._delete(this.TABLES.HOMEWORK, id); },
+
+    async markHomeworkComplete(hwId, studentId) {
+        const hw = this._getById(this.TABLES.HOMEWORK, hwId);
+        if (!hw) return;
+        const completedBy = [...(hw.completedBy || [])];
+        if (!completedBy.includes(studentId)) completedBy.push(studentId);
+        return await this._update(this.TABLES.HOMEWORK, hwId, { completedBy });
+    },
+
+    async markHomeworkIncomplete(hwId, studentId) {
+        const hw = this._getById(this.TABLES.HOMEWORK, hwId);
+        if (!hw) return;
+        const completedBy = (hw.completedBy || []).filter(id => id !== studentId);
+        return await this._update(this.TABLES.HOMEWORK, hwId, { completedBy });
     },
 
 };

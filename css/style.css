@@ -2294,3 +2294,37 @@ th.sortable i {
 }
 .att-status-btn:hover { background: var(--gray-100); }
 .att-status-btn.active { font-weight: 600; }
+
+/* ===== 숙제 관리 ===== */
+.hw-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--gray-100);
+    transition: background 0.15s;
+}
+.hw-item:last-child { border-bottom: none; }
+.hw-item:hover { background: var(--gray-50); }
+.hw-item.hw-done { opacity: 0.55; }
+.hw-item.hw-done .hw-title { text-decoration: line-through; color: var(--gray-400); }
+.hw-item.hw-overdue { background: #fff5f5; }
+.hw-item-left { flex: 1; min-width: 0; }
+.hw-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 4px;
+}
+.hw-desc {
+    font-size: 0.82rem;
+    color: var(--gray-500);
+    margin-bottom: 6px;
+}
+.hw-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}

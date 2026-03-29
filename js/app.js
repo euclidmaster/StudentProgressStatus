@@ -224,12 +224,12 @@ const App = {
         }
 
         // Student/Parent role: hide management-heavy nav items
-        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks'];
+        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
             if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
                 item.style.display = 'none';
-            } else if (view !== 'teachers' && view !== 'tasks') {
+            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance') {
                 item.style.display = '';
             }
         });
@@ -413,7 +413,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -423,7 +423,7 @@ const App = {
         const viewTables = {
             'dashboard':      [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
             'students':       [],
-            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE],
+            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE, T.HOMEWORK],
             'plans':          [T.PLANS],
             'progress':       [T.PLANS, T.PROGRESS],
             'comments':       [T.PLANS, T.COMMENTS],
@@ -432,6 +432,7 @@ const App = {
             'messages':       [T.MESSAGES],
             'tasks':          [],
             'attendance':     [T.ATTENDANCE],
+            'homework':       [T.HOMEWORK],
             'teachers':       [],
         };
 
@@ -460,6 +461,7 @@ const App = {
             case 'messages': this.renderMessages(); break;
             case 'tasks': this.renderTasks(); break;
             case 'attendance': this.renderAttendance(); break;
+            case 'homework': this.renderHomework(); break;
             case 'teachers': this.renderTeachers(); break;
         }
     },
@@ -936,6 +938,8 @@ const App = {
             </div>
 
             ${this.renderAttendanceMiniCard(studentId, canEdit)}
+
+            ${this.renderHomeworkMiniCard(studentId)}
 
             ${this.renderSelfJournalCard(studentId, canAddProgress)}
 
@@ -2891,6 +2895,283 @@ const App = {
             case 'board-cal-click':
                 this.showDateEvents(target.dataset.date || target.closest('[data-date]').dataset.date);
                 break;
+
+            // 숙제 관리 actions
+            case 'add-homework': {
+                const title = (document.getElementById('hw-title') || {}).value || '';
+                if (!title.trim()) { this.toast('숙제 제목을 입력해주세요.', 'warning'); break; }
+                const subject = (document.getElementById('hw-subject') || {}).value || '';
+                const description = (document.getElementById('hw-description') || {}).value || '';
+                const dueDate = (document.getElementById('hw-due-date') || {}).value || '';
+                const checked = [...document.querySelectorAll('.hw-student-chk:checked')].map(el => el.value);
+                try {
+                    await DataStore.addHomework({
+                        title: title.trim(),
+                        subject: subject.trim(),
+                        description: description.trim(),
+                        dueDate: dueDate || null,
+                        studentIds: checked,
+                        completedBy: [],
+                        assignedBy: this.currentUser ? this.currentUser.name : '',
+                        assignedById: this.currentUser ? this.currentUser.id : ''
+                    });
+                    this.toast('숙제가 출제되었습니다.', 'success');
+                    this.renderHomework();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'delete-homework': {
+                if (!confirm('이 숙제를 삭제하시겠습니까?')) break;
+                try {
+                    await DataStore.deleteHomework(target.dataset.hwId);
+                    this.toast('삭제되었습니다.', 'success');
+                    this.renderHomework();
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'hw-complete': {
+                const { hwId, studentId } = target.dataset;
+                try {
+                    await DataStore.markHomeworkComplete(hwId, studentId);
+                    this.toast('완료 처리되었습니다!', 'success');
+                    if (this.currentView === 'homework') this.renderHomework();
+                    else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+                    this.updateHomeworkBadge();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'hw-incomplete': {
+                const { hwId, studentId } = target.dataset;
+                try {
+                    await DataStore.markHomeworkIncomplete(hwId, studentId);
+                    this.toast('완료가 취소되었습니다.', 'success');
+                    if (this.currentView === 'homework') this.renderHomework();
+                    else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+                    this.updateHomeworkBadge();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+        }
+    },
+
+    // =========================================
+    //  VIEW: HOMEWORK (숙제 관리)
+    // =========================================
+    renderHomework() {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const isStudent = role === 'student';
+        const today = this.getLocalDateStr();
+
+        if (isStudent) {
+            // 학생 뷰: 내 숙제 목록
+            const studentId = this.currentUser.studentId;
+            const allHw = DataStore.getHomeworkForStudent(studentId);
+            const pending = allHw.filter(h => !DataStore.isHomeworkCompletedBy(h, studentId));
+            const done = allHw.filter(h => DataStore.isHomeworkCompletedBy(h, studentId));
+
+            const hwRow = (h, completed) => {
+                const isOverdue = h.dueDate && h.dueDate < today && !completed;
+                const daysLeft = h.dueDate ? Math.ceil((new Date(h.dueDate) - new Date(today)) / 86400000) : null;
+                const dueBadge = h.dueDate
+                    ? isOverdue
+                        ? `<span style="color:var(--danger);font-size:0.78rem;font-weight:600"><i class="fas fa-exclamation-circle"></i> 기한만료 (${h.dueDate})</span>`
+                        : daysLeft === 0
+                            ? `<span style="color:var(--warning);font-size:0.78rem;font-weight:600"><i class="fas fa-clock"></i> 오늘 마감</span>`
+                            : `<span style="color:var(--gray-500);font-size:0.78rem"><i class="fas fa-calendar"></i> ${h.dueDate} (D-${daysLeft})</span>`
+                    : '';
+                return `
+                <div class="hw-item ${completed ? 'hw-done' : isOverdue ? 'hw-overdue' : ''}">
+                    <div class="hw-item-left">
+                        ${h.subject ? `<span class="badge badge-primary" style="font-size:0.72rem;margin-bottom:4px">${this.escapeHtml(h.subject)}</span>` : ''}
+                        <div class="hw-title">${this.escapeHtml(h.title)}</div>
+                        ${h.description ? `<div class="hw-desc">${this.escapeHtml(h.description)}</div>` : ''}
+                        <div class="hw-meta">
+                            ${dueBadge}
+                            <span style="color:var(--gray-400);font-size:0.75rem"><i class="fas fa-user-tie"></i> ${this.escapeHtml(h.assignedBy || '')}</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm ${completed ? 'btn-outline' : 'btn-success'}"
+                        data-action="${completed ? 'hw-incomplete' : 'hw-complete'}"
+                        data-hw-id="${h.id}" data-student-id="${studentId}">
+                        <i class="fas ${completed ? 'fa-undo' : 'fa-check'}"></i> ${completed ? '취소' : '완료'}
+                    </button>
+                </div>`;
+            };
+
+            const html = `
+            <div class="card" style="margin-bottom:16px">
+                <div class="card-header">
+                    <h2><i class="fas fa-hourglass-half"></i> 미완료 숙제 (${pending.length})</h2>
+                </div>
+                <div class="card-body" style="padding:${pending.length ? '0' : ''}">
+                    ${pending.length === 0
+                        ? '<div class="empty-state" style="padding:30px"><i class="fas fa-check-circle" style="color:var(--success)"></i><h3>완료하지 않은 숙제가 없습니다!</h3></div>'
+                        : pending.map(h => hwRow(h, false)).join('')}
+                </div>
+            </div>
+            ${done.length > 0 ? `
+            <div class="card">
+                <div class="card-header">
+                    <h2><i class="fas fa-check-double"></i> 완료된 숙제 (${done.length})</h2>
+                </div>
+                <div class="card-body" style="padding:0">
+                    ${done.map(h => hwRow(h, true)).join('')}
+                </div>
+            </div>` : ''}`;
+
+            document.getElementById('content-area').innerHTML = html;
+            this.updateHomeworkBadge();
+            return;
+        }
+
+        // 선생/원장 뷰
+        const students = this.getVisibleStudents();
+        const allHw = DataStore.getHomework();
+
+        const hwCard = (h) => {
+            const assignedStudents = h.studentIds && h.studentIds.length > 0
+                ? h.studentIds.map(id => { const s = DataStore.getStudent(id); return s ? s.name : id; }).join(', ')
+                : '전체';
+            const total = h.studentIds && h.studentIds.length > 0 ? h.studentIds.length : students.length;
+            const completed = (h.completedBy || []).length;
+            const isOverdue = h.dueDate && h.dueDate < today;
+            const daysLeft = h.dueDate ? Math.ceil((new Date(h.dueDate) - new Date(today)) / 86400000) : null;
+            const dueBadge = h.dueDate
+                ? isOverdue
+                    ? `<span style="color:var(--danger);font-size:0.78rem"><i class="fas fa-exclamation-circle"></i> 기한만료 (${h.dueDate})</span>`
+                    : daysLeft === 0
+                        ? `<span style="color:var(--warning);font-size:0.78rem"><i class="fas fa-clock"></i> 오늘 마감</span>`
+                        : `<span style="color:var(--gray-500);font-size:0.78rem"><i class="fas fa-calendar"></i> ${h.dueDate} (D-${daysLeft})</span>`
+                : '<span style="color:var(--gray-300);font-size:0.78rem">기한 없음</span>';
+
+            return `
+            <div class="hw-item">
+                <div class="hw-item-left">
+                    ${h.subject ? `<span class="badge badge-primary" style="font-size:0.72rem;margin-bottom:4px">${this.escapeHtml(h.subject)}</span>` : ''}
+                    <div class="hw-title">${this.escapeHtml(h.title)}</div>
+                    ${h.description ? `<div class="hw-desc">${this.escapeHtml(h.description)}</div>` : ''}
+                    <div class="hw-meta">
+                        ${dueBadge}
+                        <span style="color:var(--gray-400);font-size:0.75rem"><i class="fas fa-users"></i> ${this.escapeHtml(assignedStudents)}</span>
+                        <span style="font-size:0.78rem;color:${completed >= total ? 'var(--success)' : 'var(--primary)'}">
+                            <i class="fas fa-check"></i> ${completed}/${total}명 완료
+                        </span>
+                    </div>
+                </div>
+                <button class="btn-icon" data-action="delete-homework" data-hw-id="${h.id}" title="삭제" style="color:var(--danger)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>`;
+        };
+
+        // 학생 체크박스 렌더링
+        const studentCheckboxes = students.map(s =>
+            `<label style="display:flex;align-items:center;gap:6px;margin-right:12px;cursor:pointer">
+                <input type="checkbox" class="hw-student-chk" value="${s.id}"> ${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})
+             </label>`
+        ).join('');
+
+        const html = `
+        <!-- 숙제 추가 폼 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h2><i class="fas fa-plus"></i> 숙제 출제</h2></div>
+            <div class="card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>제목 <span class="required">*</span></label>
+                        <input type="text" id="hw-title" class="form-control" placeholder="숙제 제목">
+                    </div>
+                    <div class="form-group">
+                        <label>과목</label>
+                        <input type="text" id="hw-subject" class="form-control" placeholder="예: 수학, 영어">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>설명</label>
+                    <input type="text" id="hw-description" class="form-control" placeholder="상세 내용 (선택)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>마감일</label>
+                        <input type="date" id="hw-due-date" class="form-control" value="${today}">
+                    </div>
+                    <div class="form-group" style="flex:2">
+                        <label>대상 학생 <span style="font-size:0.78rem;color:var(--gray-400)">(미선택 시 전체)</span></label>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;border:1px solid var(--gray-200);border-radius:8px;min-height:38px">
+                            ${studentCheckboxes || '<span style="color:var(--gray-300);font-size:0.85rem">담당 학생이 없습니다</span>'}
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" data-action="add-homework"><i class="fas fa-paper-plane"></i> 출제하기</button>
+            </div>
+        </div>
+
+        <!-- 숙제 목록 -->
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-list-ul"></i> 출제된 숙제 (${allHw.length})</h2></div>
+            <div class="card-body" style="padding:${allHw.length ? '0' : ''}">
+                ${allHw.length === 0
+                    ? '<div class="empty-state" style="padding:30px"><i class="fas fa-tasks"></i><h3>출제된 숙제가 없습니다</h3><p>위 폼에서 숙제를 출제해보세요.</p></div>'
+                    : allHw.map(h => hwCard(h)).join('')}
+            </div>
+        </div>`;
+
+        document.getElementById('content-area').innerHTML = html;
+    },
+
+    // 학생 상세 숙제 미니카드
+    renderHomeworkMiniCard(studentId) {
+        const today = this.getLocalDateStr();
+        const allHw = DataStore.getHomeworkForStudent(studentId);
+        const pending = allHw.filter(h => !DataStore.isHomeworkCompletedBy(h, studentId));
+        const overdue = pending.filter(h => h.dueDate && h.dueDate < today);
+        if (allHw.length === 0) return '';
+
+        const rows = pending.slice(0, 5).map(h => {
+            const isOverdue = h.dueDate && h.dueDate < today;
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-100)">
+                <span style="flex:1;font-size:0.85rem">${this.escapeHtml(h.title)}${h.subject ? ` <span style="color:var(--primary);font-size:0.75rem">[${this.escapeHtml(h.subject)}]</span>` : ''}</span>
+                ${h.dueDate ? `<span style="font-size:0.75rem;color:${isOverdue ? 'var(--danger)' : 'var(--gray-400)'};font-weight:${isOverdue ? '600' : '400'}">${h.dueDate}</span>` : ''}
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+                <h2><i class="fas fa-tasks"></i> 숙제 현황</h2>
+                <div style="display:flex;gap:8px;align-items:center">
+                    ${overdue.length > 0 ? `<span class="badge badge-danger"><i class="fas fa-exclamation-circle"></i> 기한만료 ${overdue.length}</span>` : ''}
+                    <span class="badge badge-primary">미완료 ${pending.length}</span>
+                    <span class="badge badge-success">완료 ${allHw.length - pending.length}</span>
+                </div>
+            </div>
+            <div class="card-body" style="padding:${pending.length ? '8px 20px' : ''}">
+                ${pending.length === 0
+                    ? '<div style="text-align:center;padding:12px;color:var(--success)"><i class="fas fa-check-circle"></i> 모든 숙제를 완료했습니다!</div>'
+                    : rows + (pending.length > 5 ? `<div style="text-align:center;padding:6px;font-size:0.8rem;color:var(--gray-400)">외 ${pending.length - 5}개 더...</div>` : '')}
+            </div>
+        </div>`;
+    },
+
+    // 숙제 배지 업데이트 (학생용)
+    updateHomeworkBadge() {
+        const badge = document.getElementById('homework-badge');
+        if (!badge) return;
+        const role = this.currentUser ? this.currentUser.role : '';
+        if (role === 'student' && this.currentUser.studentId) {
+            const allHw = DataStore.getHomeworkForStudent(this.currentUser.studentId);
+            const pending = allHw.filter(h => !DataStore.isHomeworkCompletedBy(h, this.currentUser.studentId)).length;
+            if (pending > 0) {
+                badge.textContent = pending;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        } else {
+            badge.style.display = 'none';
         }
     },
 

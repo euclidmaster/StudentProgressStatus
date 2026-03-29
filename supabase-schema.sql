@@ -293,3 +293,24 @@ CREATE TABLE IF NOT EXISTS attendance (
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon_all" ON attendance;
 CREATE POLICY "anon_all" ON attendance FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- 마이그레이션: 숙제 관리 테이블 추가
+-- 아래 SQL을 Supabase SQL Editor에서 실행하세요
+-- ============================================
+CREATE TABLE IF NOT EXISTS homework (
+    id TEXT PRIMARY KEY,
+    assigned_by TEXT DEFAULT '',
+    assigned_by_id TEXT DEFAULT '',
+    subject TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    due_date TEXT DEFAULT '',
+    student_ids JSONB DEFAULT '[]',
+    completed_by JSONB DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+ALTER TABLE homework ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all" ON homework;
+CREATE POLICY "anon_all" ON homework FOR ALL TO anon USING (true) WITH CHECK (true);
