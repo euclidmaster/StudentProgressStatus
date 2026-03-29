@@ -412,6 +412,7 @@ const DataStore = {
     },
 
     async login(loginId, password) {
+        await this._ensureLoaded(this.TABLES.TEACHERS);
         const user = this.getTeachers().find(t => t.loginId === loginId);
         if (!user) return null;
 
