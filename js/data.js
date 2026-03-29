@@ -29,6 +29,7 @@ const DataStore = {
     },
 
     _syncEnabled: true,
+    _loaded: new Set(), // 이미 로드된 테이블 추적
 
     // === camelCase <-> snake_case 변환 ===
     _toSnake(str) {
@@ -55,33 +56,36 @@ const DataStore = {
     },
 
     generateId() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
     },
 
-    // === Supabase에서 전체 데이터 로드 ===
+    // === Supabase 초기 로드: 로그인에 필요한 핵심 테이블만 ===
     async initFromSupabase() {
         if (typeof supabaseClient === 'undefined') {
             throw new Error('supabaseClient가 정의되지 않았습니다');
         }
-        const tableNames = Object.values(this.TABLES);
+        await this._ensureLoaded(this.TABLES.TEACHERS, this.TABLES.STUDENTS);
+    },
+
+    // === 지연 로딩: 아직 로드되지 않은 테이블만 Supabase에서 가져옴 ===
+    async _ensureLoaded(...tableKeys) {
+        const toLoad = tableKeys.filter(k => !this._loaded.has(k));
+        if (toLoad.length === 0) return;
+
         const results = await Promise.all(
-            tableNames.map(table => supabaseClient.from(table).select('*'))
+            toLoad.map(table => supabaseClient.from(table).select('*'))
         );
-        let hasError = false;
-        tableNames.forEach((table, i) => {
+        toLoad.forEach((table, i) => {
             const { data, error } = results[i];
             if (error) {
                 console.error(`[Supabase] ${table} 로드 오류:`, error);
-                hasError = true;
                 this._cache[table] = [];
             } else {
                 this._cache[table] = (data || []).map(row => this._objToCamel(row));
+                this._loaded.add(table);
                 console.log(`[Supabase] ${table}: ${this._cache[table].length}건 로드`);
             }
         });
-        if (hasError) {
-            throw new Error('일부 테이블 로드 실패');
-        }
     },
 
     // === Generic CRUD (메모리 캐시 + Supabase 서버 저장) ===
@@ -180,12 +184,16 @@ const DataStore = {
         for (const c of this.getStudentComments(id)) await this._delete(this.TABLES.COMMENTS, c.id);
         for (const g of this.getStudentGrades(id)) await this.deleteGrade(g.id);
         for (const m of this.getMessages().filter(m => m.studentId === id)) await this.deleteMessage(m.id);
-        // Clean assignedStudentIds from teachers
+        // 선생님 담당 목록에서 해당 학생 제거
         for (const t of this.getTeachers()) {
             if (t.assignedStudentIds && t.assignedStudentIds.includes(id)) {
                 const updated = t.assignedStudentIds.filter(sid => sid !== id);
                 await this.updateTeacher(t.id, { assignedStudentIds: updated });
             }
+        }
+        // 해당 학생으로 가입된 로그인 계정(teachers 테이블) 삭제
+        for (const t of this.getTeachers().filter(t => t.studentId === id)) {
+            await this._delete(this.TABLES.TEACHERS, t.id);
         }
         return await this._delete(this.TABLES.STUDENTS, id);
     },
@@ -337,6 +345,7 @@ const DataStore = {
     async addMessage(msg) {
         msg.readBy = msg.readBy || {};
         msg.pinned = msg.pinned || false;
+        msg.channel = msg.channel || 'internal';
         return await this._add(this.TABLES.MESSAGES, msg);
     },
 
@@ -408,11 +417,34 @@ const DataStore = {
         return this.getTeachers().find(t => t.loginId === loginId) || null;
     },
 
-    login(loginId, password) {
-        const user = this.getTeachers().find(t => t.loginId === loginId && t.password === password);
+    async login(loginId, password) {
+        const user = this.getTeachers().find(t => t.loginId === loginId);
         if (!user) return null;
+
+        // bcrypt 해시면 compareSync, 평문이면 직접 비교 후 자동 마이그레이션
+        const storedPw = user.password || '';
+        const isBcrypt = storedPw.startsWith('$2a$') || storedPw.startsWith('$2b$');
+        let passwordMatch = false;
+        if (isBcrypt) {
+            passwordMatch = bcrypt.compareSync(password, storedPw);
+        } else {
+            passwordMatch = (storedPw === password);
+            if (passwordMatch) {
+                const hashed = bcrypt.hashSync(password, 10);
+                await this._update(this.TABLES.TEACHERS, user.id, { password: hashed });
+            }
+        }
+
+        if (!passwordMatch) return null;
         if (user.approved === false) return { rejected: false, pending: true };
-        const sessionUser = { id: user.id, loginId: user.loginId, name: user.name, role: user.role, assignedStudentIds: user.assignedStudentIds || [] };
+
+        const sessionUser = {
+            id: user.id,
+            loginId: user.loginId,
+            name: user.name,
+            role: user.role,
+            assignedStudentIds: user.assignedStudentIds || []
+        };
         if (user.studentId) sessionUser.studentId = user.studentId;
         localStorage.setItem(this.CURRENT_USER_KEY, JSON.stringify(sessionUser));
         return sessionUser;
@@ -436,6 +468,9 @@ const DataStore = {
 
     logout() {
         localStorage.removeItem(this.CURRENT_USER_KEY);
+        // 다음 로그인 시 데이터를 새로 로드하도록 캐시 초기화
+        this._loaded.clear();
+        Object.keys(this._cache).forEach(k => { this._cache[k] = []; });
     },
 
     getCurrentUser() {

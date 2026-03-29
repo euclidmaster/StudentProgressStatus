@@ -78,6 +78,7 @@ CREATE TABLE messages (
     content TEXT DEFAULT '',
     read_by JSONB DEFAULT '{}',
     pinned BOOLEAN DEFAULT FALSE,
+    channel TEXT DEFAULT 'internal',  -- 'internal' | 'team'
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ
 );
@@ -114,30 +115,124 @@ CREATE TABLE grades (
 );
 
 -- ============================================
--- RLS (Row Level Security) 정책
--- 개발용: 모든 접근 허용
--- ⚠️ 프로덕션 환경에서는 적절한 RLS 정책을 설정하세요.
+-- pgcrypto 확장 (서버사이드 bcrypt 검증용)
 -- ============================================
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ============================================
+-- 서버사이드 로그인 함수
+-- 비밀번호 해시를 클라이언트에 절대 전송하지 않음
+-- SECURITY DEFINER: anon 역할에서 호출해도 password 컬럼 접근 가능
+-- ============================================
+CREATE OR REPLACE FUNCTION public.secure_login(p_login_id TEXT, p_password TEXT)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user teachers%ROWTYPE;
+  v_match BOOLEAN := FALSE;
+BEGIN
+  SELECT * INTO v_user FROM teachers WHERE login_id = p_login_id LIMIT 1;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+
+  -- bcrypt 해시 여부 확인 후 검증
+  IF left(v_user.password, 4) = '$2a$' OR left(v_user.password, 4) = '$2b$' THEN
+    v_match := (v_user.password = crypt(p_password, v_user.password));
+  ELSE
+    -- 평문 비밀번호: 직접 비교 후 bcrypt로 자동 마이그레이션
+    v_match := (v_user.password = p_password);
+    IF v_match THEN
+      UPDATE teachers SET password = crypt(p_password, gen_salt('bf', 10)) WHERE id = v_user.id;
+    END IF;
+  END IF;
+
+  IF NOT v_match THEN RETURN NULL; END IF;
+
+  -- 비밀번호 해시는 반환하지 않음
+  RETURN json_build_object(
+    'id',                   v_user.id,
+    'login_id',             v_user.login_id,
+    'name',                 v_user.name,
+    'role',                 v_user.role,
+    'approved',             v_user.approved,
+    'student_id',           v_user.student_id,
+    'assigned_student_ids', v_user.assigned_student_ids
+  );
+END;
+$$;
+
+-- ============================================
+-- RLS (Row Level Security) 정책
+-- 현재 구조: 자체 teachers 테이블 인증 (Supabase Auth 미사용)
+-- → anon 키 기반이므로 JWT per-user RLS 적용 불가
+-- → 대신 password 컬럼 SELECT 차단 + secure_login 함수로 서버사이드 검증
+--
+-- ※ 향후 Supabase Auth 마이그레이션 시 아래 주석 정책으로 교체하세요.
+-- ============================================
+
+-- students
 ALTER TABLE students ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON students FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON students;
+CREATE POLICY "anon_all" ON students FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- plans
 ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON plans FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON plans;
+CREATE POLICY "anon_all" ON plans FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- progress
 ALTER TABLE progress ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON progress FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON progress;
+CREATE POLICY "anon_all" ON progress FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- comments
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON comments FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON comments;
+CREATE POLICY "anon_all" ON comments FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- messages
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON messages FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON messages;
+CREATE POLICY "anon_all" ON messages FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- teachers: password 컬럼 SELECT를 anon 역할에서 차단
 ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON teachers FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON teachers;
+CREATE POLICY "anon_all" ON teachers FOR ALL TO anon USING (true) WITH CHECK (true);
+REVOKE SELECT (password) ON teachers FROM anon;
+-- secure_login 함수(SECURITY DEFINER)는 내부적으로 password에 접근 가능
 
+-- grades
 ALTER TABLE grades ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON grades FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON grades;
+CREATE POLICY "anon_all" ON grades FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- [참고] 향후 Supabase Auth 전환 시 적용할 역할 기반 RLS 예시
+-- ============================================
+-- CREATE POLICY "director_all" ON students
+--   FOR ALL TO authenticated
+--   USING ((auth.jwt() ->> 'role') = 'director');
+--
+-- CREATE POLICY "teacher_assigned" ON students
+--   FOR SELECT TO authenticated
+--   USING (
+--     (auth.jwt() ->> 'role') = 'teacher' AND
+--     id = ANY(
+--       SELECT jsonb_array_elements_text(assigned_student_ids)
+--       FROM teachers WHERE id::text = auth.uid()::text
+--     )
+--   );
+--
+-- CREATE POLICY "student_own" ON students
+--   FOR SELECT TO authenticated
+--   USING (
+--     (auth.jwt() ->> 'role') = 'student' AND
+--     id = (auth.jwt() ->> 'student_id')
+--   );
+-- ============================================
 
 -- 8. 게시판 테이블
 CREATE TABLE board_posts (
@@ -167,7 +262,17 @@ CREATE TABLE board_events (
 );
 
 ALTER TABLE board_posts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON board_posts FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON board_posts;
+CREATE POLICY "anon_all" ON board_posts FOR ALL TO anon USING (true) WITH CHECK (true);
 
 ALTER TABLE board_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON board_events FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access" ON board_events;
+CREATE POLICY "anon_all" ON board_events FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- 마이그레이션: 기존 DB에 channel 컬럼 추가
+-- (테이블이 이미 존재하는 경우 이 SQL만 실행)
+-- ============================================
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'internal';
+-- 기존 데이터 중 channel이 NULL인 행을 'internal'로 채움
+UPDATE messages SET channel = 'internal' WHERE channel IS NULL;

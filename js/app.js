@@ -8,12 +8,24 @@ const App = {
 
     async init() {
         let supabaseOk = false;
-        try {
-            await DataStore.initFromSupabase();
-            supabaseOk = true;
-        } catch (e) {
-            console.error('Supabase 연결 실패:', e);
-            alert('서버 연결에 실패했습니다. 인터넷 연결을 확인해주세요.');
+        const loadingMsg = document.querySelector('#loading-screen p');
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                if (attempt > 1 && loadingMsg) {
+                    loadingMsg.textContent = `서버 연결 중... (${attempt}/3)`;
+                }
+                await DataStore.initFromSupabase();
+                supabaseOk = true;
+                break;
+            } catch (e) {
+                console.warn(`Supabase 연결 시도 ${attempt} 실패:`, e);
+                if (attempt < 3) {
+                    await new Promise(r => setTimeout(r, 2000)); // 2초 대기 후 재시도
+                } else {
+                    alert('서버 연결에 실패했습니다. 인터넷 연결을 확인해주세요.');
+                }
+            }
         }
         this.createToastContainer();
 
@@ -46,13 +58,13 @@ const App = {
         // Remove old listener by cloning
         const newForm = form.cloneNode(true);
         form.parentNode.replaceChild(newForm, form);
-        newForm.addEventListener('submit', (e) => {
+        newForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const loginId = document.getElementById('login-id').value.trim();
             const password = document.getElementById('login-pw').value;
             const errorEl = document.getElementById('login-error');
 
-            const user = DataStore.login(loginId, password);
+            const user = await DataStore.login(loginId, password);
             if (user && user.pending) {
                 errorEl.textContent = '가입 승인 대기 중입니다. 원장 승인 후 로그인할 수 있습니다.';
                 errorEl.style.display = 'block';
@@ -134,16 +146,24 @@ const App = {
                 return;
             }
 
-            if (role === 'student') {
-                // Register as student + teacher account (pending approval)
-                const school = newRegForm.querySelector('#reg-school').value.trim() || '-';
-                const grade = newRegForm.querySelector('#reg-grade').value;
-                const className = newRegForm.querySelector('#reg-class').value.trim() || '-';
-                const phone = newRegForm.querySelector('#reg-phone').value.trim() || '';
-                const student = await DataStore.addStudent({ name, school, grade, className, phone, status: '대기', enrollDate: new Date().toISOString().slice(0, 10) });
-                await DataStore.addTeacher({ name, loginId, password: pw, role: 'student', assignedStudentIds: [student.id], studentId: student.id, approved: false, regDate: new Date().toISOString().slice(0, 10) });
-            } else {
-                await DataStore.addTeacher({ name, loginId, password: pw, role, assignedStudentIds: [], approved: false, regDate: new Date().toISOString().slice(0, 10) });
+            try {
+                if (role === 'student') {
+                    // Register as student + teacher account (pending approval)
+                    const school = newRegForm.querySelector('#reg-school').value.trim() || '-';
+                    const grade = newRegForm.querySelector('#reg-grade').value;
+                    const className = newRegForm.querySelector('#reg-class').value.trim() || '-';
+                    const phone = newRegForm.querySelector('#reg-phone').value.trim() || '';
+                    const hashedPw = bcrypt.hashSync(pw, 10);
+                    const student = await DataStore.addStudent({ name, school, grade, className, phone, status: '대기', enrollDate: new Date().toISOString().slice(0, 10) });
+                    await DataStore.addTeacher({ name, loginId, password: hashedPw, role: 'student', assignedStudentIds: [student.id], studentId: student.id, approved: false, regDate: new Date().toISOString().slice(0, 10) });
+                } else {
+                    const hashedPw = bcrypt.hashSync(pw, 10);
+                    await DataStore.addTeacher({ name, loginId, password: hashedPw, role, assignedStudentIds: [], approved: false, regDate: new Date().toISOString().slice(0, 10) });
+                }
+            } catch (err) {
+                errorEl.textContent = '가입 처리 중 오류가 발생했습니다: ' + err.message;
+                errorEl.style.display = 'block';
+                return;
             }
 
             this.toast('회원가입 신청이 완료되었습니다. 원장 승인 후 로그인할 수 있습니다.', 'success');
@@ -192,7 +212,7 @@ const App = {
         }
 
         // Student role: hide management-heavy nav items
-        const studentHiddenViews = ['plans', 'progress', 'comments', 'teachers'];
+        const studentHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
             if (role === 'student' && studentHiddenViews.includes(view)) {
@@ -374,7 +394,7 @@ const App = {
     },
 
     // === Navigation ===
-    navigate(view, data = {}) {
+    async navigate(view, data = {}) {
         this.currentView = view;
 
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -385,6 +405,34 @@ const App = {
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
+
+        // 뷰별 필요 테이블 정의 (students/teachers는 초기 로드됨)
+        const T = DataStore.TABLES;
+        const viewTables = {
+            'dashboard':      [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
+            'students':       [],
+            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
+            'plans':          [T.PLANS],
+            'progress':       [T.PLANS, T.PROGRESS],
+            'comments':       [T.PLANS, T.COMMENTS],
+            'grades':         [T.GRADES],
+            'board':          [T.BOARD_POSTS, T.BOARD_EVENTS],
+            'messages':       [T.MESSAGES],
+            'teachers':       [],
+        };
+
+        const needed = viewTables[view] || [];
+        if (needed.length > 0) {
+            document.getElementById('content-area').innerHTML =
+                '<div style="padding:2rem;text-align:center;color:var(--gray-400)"><i class="fas fa-spinner fa-spin"></i> 불러오는 중...</div>';
+            try {
+                await DataStore._ensureLoaded(...needed);
+            } catch (err) {
+                document.getElementById('content-area').innerHTML =
+                    `<div style="padding:2rem;text-align:center;color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> 데이터를 불러오지 못했습니다.<br><small>${this.escapeHtml(err.message)}</small></div>`;
+                return;
+            }
+        }
 
         switch (view) {
             case 'dashboard': this.renderDashboard(); break;
@@ -560,6 +608,12 @@ const App = {
     //  VIEW: STUDENTS LIST
     // =========================================
     renderStudents(searchQuery = '') {
+        // 학생 역할이면 본인 상세 페이지로 바로 이동
+        if (Permissions.isStudent() && this.currentUser && this.currentUser.studentId) {
+            this.navigate('student-detail', { studentId: this.currentUser.studentId });
+            return;
+        }
+
         const visibleStudents = this.getVisibleStudents();
         const visibleIds = visibleStudents.map(s => s.id);
         const allStudents = visibleStudents;
@@ -580,7 +634,7 @@ const App = {
                     </select>
                     <span style="color:var(--gray-500);font-size:0.85rem">${students.length}명</span>
                 </div>
-                <button class="btn btn-primary" data-action="add-student"><i class="fas fa-plus"></i> 학생 등록</button>
+                ${!Permissions.isStudent() ? `<button class="btn btn-primary" data-action="add-student"><i class="fas fa-plus"></i> 학생 등록</button>` : ''}
             </div>
 
             <div class="card">
@@ -703,6 +757,7 @@ const App = {
 
         // 권한 체크
         const canEdit = Permissions.canEditStudent(studentId);
+        const canAddProgress = Permissions.canAddProgress(studentId);
         const canAddComment = Permissions.canAddComment(studentId);
         const isStudent = Permissions.isStudent();
 
@@ -784,10 +839,10 @@ const App = {
                                         ${this.getDifficultyBadge(plan.difficulty)}
                                         ${isChecklist ? '<span class="badge badge-info" style="font-size:0.68rem"><i class="fas fa-tasks"></i> 단원별</span>' : ''}
                                     </div>
-                                    ${canEdit ? `<div class="plan-card-actions">
-                                        ${!isChecklist ? `<button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-plus"></i> 진도 입력</button>` : ''}
-                                        <button class="btn btn-sm btn-outline" data-action="edit-plan" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-edit"></i></button>
-                                        <button class="btn btn-sm btn-ghost" data-action="delete-plan" data-plan-id="${plan.id}" data-student-id="${studentId}" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
+                                    ${(canEdit || canAddProgress) ? `<div class="plan-card-actions">
+                                        ${(!isChecklist && canAddProgress) ? `<button class="btn btn-sm btn-success" data-action="add-progress" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-plus"></i> 진도 입력</button>` : ''}
+                                        ${canEdit ? `<button class="btn btn-sm btn-outline" data-action="edit-plan" data-plan-id="${plan.id}" data-student-id="${studentId}"><i class="fas fa-edit"></i></button>` : ''}
+                                        ${canEdit ? `<button class="btn btn-sm btn-ghost" data-action="delete-plan" data-plan-id="${plan.id}" data-student-id="${studentId}" style="color:var(--danger)"><i class="fas fa-trash"></i></button>` : ''}
                                     </div>` : ''}
                                 </div>
                                 <div class="plan-card-meta">
@@ -2795,11 +2850,12 @@ const App = {
             try {
                 if (isEdit) {
                     const updates = { name };
-                    if (password) updates.password = password;
+                    if (password) updates.password = bcrypt.hashSync(password, 10);
                     await DataStore.updateTeacher(teacher.id, updates);
                     this.toast('선생님 정보가 수정되었습니다.', 'success');
                 } else {
-                    await DataStore.addTeacher({ name, loginId, password: password || '1234', role: 'teacher', assignedStudentIds: [] });
+                    const rawPw = password || '1234';
+                    await DataStore.addTeacher({ name, loginId, password: bcrypt.hashSync(rawPw, 10), role: 'teacher', assignedStudentIds: [] });
                     this.toast('새 선생님이 등록되었습니다.', 'success');
                 }
 
@@ -3767,7 +3823,8 @@ const App = {
                     studentId: form.studentId.value || null,
                     title: form.title.value.trim(),
                     content: form.content.value.trim(),
-                    pinned: form.pinned.checked
+                    pinned: form.pinned.checked,
+                    channel: 'internal'
                 });
                 this.toast('메시지가 전송되었습니다.', 'success');
                 this.closeModal();

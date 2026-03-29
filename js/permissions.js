@@ -102,6 +102,23 @@ const Permissions = {
         return false;
     },
 
+    /**
+     * 진도 입력 가능 여부 (학생은 본인 진도만 입력 가능)
+     */
+    canAddProgress(studentId) {
+        const user = this.getCurrentUser();
+        if (!user) return false;
+        if (user.role === this.ROLES.DIRECTOR) return true;
+        if (user.role === this.ROLES.TEACHER) {
+            return (user.assignedStudentIds || []).includes(studentId);
+        }
+        // 학생: 본인 진도만 입력 가능
+        if (user.role === this.ROLES.STUDENT) {
+            return user.studentId === studentId;
+        }
+        return false;
+    },
+
     // ==========================================
     //  학습 계획 권한
     // ==========================================
