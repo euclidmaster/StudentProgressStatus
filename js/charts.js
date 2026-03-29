@@ -220,6 +220,36 @@ const Charts = {
         });
     },
 
+    // 학생 비교 수평 바 차트 (범용)
+    createStudentCompareBar(canvasId, labels, datasets, xSuffix = '%', xMax = 100) {
+        this.destroy(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        const xScale = {
+            beginAtZero: true,
+            ticks: { callback: v => v + xSuffix, font: { family: "'Noto Sans KR', sans-serif", size: 11 } },
+            grid: { color: '#F3F4F6' }
+        };
+        if (xMax !== null) xScale.max = xMax;
+        this.instances[canvasId] = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                scales: {
+                    x: xScale,
+                    y: { grid: { display: false }, ticks: { font: { family: "'Noto Sans KR', sans-serif", size: 11 } } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.formattedValue}${xSuffix}` } }
+                }
+            }
+        });
+    },
+
     // 전체 학생 과목별 평균 진행률
     createAllStudentsSubject(canvasId) {
         this.destroy(canvasId);

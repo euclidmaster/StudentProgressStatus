@@ -2584,6 +2584,14 @@ th.sortable i {
     align-items: center;
 }
 
+/* ===== 학생 비교 분석 ===== */
+.analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+@media (max-width: 900px) { .analytics-grid { grid-template-columns: 1fr; } }
+
 /* ===== 수업료 관리 ===== */
 .tuition-table {
     width: 100%;

@@ -235,13 +235,19 @@ const App = {
             tuitionNav.style.display = role === 'director' ? '' : 'none';
         }
 
+        // 비교 분석 nav: 원장/선생만 표시
+        const analyticsNav = document.getElementById('nav-analytics');
+        if (analyticsNav) {
+            analyticsNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
+        }
+
         // Student/Parent role: hide management-heavy nav items
-        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition'];
+        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition', 'analytics'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
             if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
                 item.style.display = 'none';
-            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance' && view !== 'consultations' && view !== 'tuition') {
+            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance' && view !== 'consultations' && view !== 'tuition' && view !== 'analytics') {
                 item.style.display = '';
             }
         });
@@ -442,7 +448,7 @@ const App = {
         // Auto-expand the nav group containing the active view
         const viewGroupMap = {
             dashboard: 'navg-student', students: 'navg-student', 'student-detail': 'navg-student',
-            attendance: 'navg-student', consultations: 'navg-student', teachers: 'navg-student',
+            attendance: 'navg-student', consultations: 'navg-student', teachers: 'navg-student', analytics: 'navg-student',
             plans: 'navg-study', progress: 'navg-study', homework: 'navg-study',
             exam: 'navg-study', comments: 'navg-study', report: 'navg-study',
             grades: 'navg-ops', board: 'navg-ops', notifications: 'navg-ops',
@@ -453,7 +459,7 @@ const App = {
             document.getElementById(targetGroup)?.classList.add('open');
         }
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -479,6 +485,7 @@ const App = {
             'report':         [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.GRADES, T.COMMENTS],
             'teachers':       [],
             'tuition':        [T.TUITION],
+            'analytics':      [T.PLANS, T.ATTENDANCE, T.GRADES, T.HOMEWORK],
         };
 
         const needed = viewTables[view] || [];
@@ -513,6 +520,7 @@ const App = {
             case 'report': this.renderReport(data.studentId, data.ym); break;
             case 'teachers': this.renderTeachers(); break;
             case 'tuition': this.renderTuition(); break;
+            case 'analytics': this.renderAnalytics(); break;
         }
     },
 
@@ -3014,6 +3022,12 @@ const App = {
                 this.navigate('notifications');
                 break;
 
+            // 비교 분석 actions
+            case 'analytics-filter':
+                this._analyticsGrade = target.dataset.grade;
+                this.renderAnalytics();
+                break;
+
             // 수업료 관리 actions
             case 'tuition-prev-month': {
                 const [ty, tm] = (this._tuitionYM || new Date().toISOString().slice(0,7)).split('-').map(Number);
@@ -4026,6 +4040,148 @@ const App = {
         } else {
             badge.style.display = 'none';
         }
+    },
+
+    // =========================================
+    //  VIEW: ANALYTICS (학생 비교 분석)
+    // =========================================
+    renderAnalytics() {
+        const students = this.getVisibleStudents().filter(s => s.status !== '퇴원');
+        if (students.length === 0) {
+            document.getElementById('content-area').innerHTML =
+                '<div class="card"><div class="card-body" style="padding:2rem;text-align:center;color:var(--gray-400)">분석할 학생이 없습니다.</div></div>';
+            return;
+        }
+
+        const selectedGrade = this._analyticsGrade || 'all';
+        const grades = [...new Set(students.map(s => s.grade).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+        const filtered = selectedGrade === 'all' ? students : students.filter(s => s.grade === selectedGrade);
+
+        // 학생별 지표 계산
+        const metrics = filtered.map(s => {
+            // 진도율: 활성 계획 평균
+            const plans = DataStore.getStudentPlans(s.id).filter(p => p.status === 'active');
+            const progressPct = plans.length > 0
+                ? Math.round(plans.reduce((sum, p) => sum + (p.totalUnits > 0 ? (p.completedUnits / p.totalUnits) * 100 : 0), 0) / plans.length)
+                : 0;
+
+            // 출석률
+            const att = (DataStore._cache['attendance'] || []).filter(a => a.studentId === s.id);
+            const attendRate = att.length > 0
+                ? Math.round((att.filter(a => a.status === '출석').length / att.length) * 100)
+                : null;
+
+            // 성적: 최근 시험 평균점수
+            const gs = DataStore.getStudentGrades(s.id).sort((a, b) =>
+                (b.examDate || b.createdAt || '').localeCompare(a.examDate || a.createdAt || ''));
+            const latestGrade = gs.length > 0 && gs[0].totalAvg > 0 ? Math.round(gs[0].totalAvg * 10) / 10 : null;
+
+            // 숙제 완료율
+            const hw = (DataStore._cache['homework'] || []).filter(h => {
+                const ids = h.studentIds || [];
+                return ids.length === 0 || ids.includes(s.id);
+            });
+            const hwRate = hw.length > 0
+                ? Math.round((hw.filter(h => (h.completedBy || []).includes(s.id)).length / hw.length) * 100)
+                : null;
+
+            return { student: s, progressPct, attendRate, latestGrade, hwRate };
+        }).sort((a, b) => a.student.name.localeCompare(b.student.name, 'ko'));
+
+        const labels = metrics.map(m => m.student.name);
+        const chartH = Math.max(180, labels.length * 34) + 'px';
+
+        // 색상: 값에 따라 초록/파랑/노랑/빨강
+        const colorByPct = v => v >= 80 ? '#10B981' : v >= 60 ? '#4F46E5' : v >= 40 ? '#F59E0B' : '#EF4444';
+
+        document.getElementById('content-area').innerHTML = `
+        <div class="view-container">
+            <!-- 필터 -->
+            <div class="card" style="margin-bottom:1.5rem">
+                <div class="card-body" style="padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                    <span style="font-weight:600;color:var(--gray-700);font-size:0.9rem">학년 필터</span>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        <button class="btn btn-sm ${selectedGrade==='all'?'btn-primary':'btn-outline'}" data-action="analytics-filter" data-grade="all">전체</button>
+                        ${grades.map(g => `<button class="btn btn-sm ${selectedGrade===g?'btn-primary':'btn-outline'}" data-action="analytics-filter" data-grade="${this.escapeHtml(g)}">${this.escapeHtml(g)}</button>`).join('')}
+                    </div>
+                    <span style="margin-left:auto;color:var(--gray-400);font-size:0.83rem">${filtered.length}명</span>
+                </div>
+            </div>
+
+            <!-- 차트 2x2 그리드 -->
+            <div class="analytics-grid">
+                <div class="card">
+                    <div class="card-header"><h2><i class="fas fa-chart-line" style="color:var(--primary)"></i> 진도율</h2><span class="badge badge-primary">활성 계획 평균</span></div>
+                    <div class="card-body"><div style="height:${chartH}"><canvas id="chart-analytics-progress"></canvas></div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h2><i class="fas fa-calendar-check" style="color:var(--success)"></i> 출석률</h2><span class="badge badge-success">전체 기간</span></div>
+                    <div class="card-body"><div style="height:${chartH}"><canvas id="chart-analytics-attend"></canvas></div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h2><i class="fas fa-trophy" style="color:var(--warning)"></i> 최근 성적</h2><span class="badge badge-warning">최근 시험 평균점</span></div>
+                    <div class="card-body"><div style="height:${chartH}"><canvas id="chart-analytics-grade"></canvas></div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h2><i class="fas fa-tasks" style="color:var(--info)"></i> 숙제 완료율</h2><span class="badge" style="background:var(--info-bg);color:var(--info)">전체 숙제</span></div>
+                    <div class="card-body"><div style="height:${chartH}"><canvas id="chart-analytics-hw"></canvas></div></div>
+                </div>
+            </div>
+
+            <!-- 종합 비교표 -->
+            <div class="card" style="margin-top:1.5rem">
+                <div class="card-header"><h2><i class="fas fa-table"></i> 종합 비교표</h2></div>
+                <div class="card-body" style="padding:0;overflow-x:auto">
+                    <table class="tuition-table">
+                        <thead><tr>
+                            <th>학생</th>
+                            <th style="min-width:160px">진도율</th>
+                            <th style="min-width:160px">출석률</th>
+                            <th style="min-width:100px;text-align:center">최근 성적</th>
+                            <th style="min-width:160px">숙제 완료율</th>
+                        </tr></thead>
+                        <tbody>${metrics.map(m => `
+                            <tr>
+                                <td><span class="student-name" data-action="view-student" data-id="${m.student.id}" style="cursor:pointer">
+                                    <strong>${this.escapeHtml(m.student.name)}</strong></span>
+                                    <br><small class="text-muted">${this.escapeHtml((m.student.grade||'')+' '+(m.student.className||''))}</small>
+                                </td>
+                                <td>${this.analyticsBar(m.progressPct, '#4F46E5')}</td>
+                                <td>${m.attendRate !== null ? this.analyticsBar(m.attendRate, '#10B981') : '<span style="color:var(--gray-300);font-size:0.82rem">기록 없음</span>'}</td>
+                                <td style="text-align:center">${m.latestGrade !== null
+                                    ? `<span style="font-weight:700;font-size:1rem;color:${m.latestGrade>=80?'var(--success)':m.latestGrade>=60?'var(--primary)':m.latestGrade>=40?'var(--warning)':'var(--danger)'}">${m.latestGrade}</span><span style="font-size:0.75rem;color:var(--gray-400)">점</span>`
+                                    : '<span style="color:var(--gray-300);font-size:0.82rem">없음</span>'}
+                                </td>
+                                <td>${m.hwRate !== null ? this.analyticsBar(m.hwRate, '#06B6D4') : '<span style="color:var(--gray-300);font-size:0.82rem">숙제 없음</span>'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+
+        // 차트 렌더링
+        Charts.createStudentCompareBar('chart-analytics-progress', labels,
+            [{ label: '진도율', data: metrics.map(m => m.progressPct), backgroundColor: metrics.map(m => colorByPct(m.progressPct)), borderRadius: 5, barThickness: 18 }], '%');
+
+        Charts.createStudentCompareBar('chart-analytics-attend', labels,
+            [{ label: '출석률', data: metrics.map(m => m.attendRate ?? 0), backgroundColor: metrics.map(m => m.attendRate !== null ? colorByPct(m.attendRate) : '#E5E7EB'), borderRadius: 5, barThickness: 18 }], '%');
+
+        Charts.createStudentCompareBar('chart-analytics-grade', labels,
+            [{ label: '성적', data: metrics.map(m => m.latestGrade ?? 0), backgroundColor: metrics.map(m => m.latestGrade !== null ? colorByPct(m.latestGrade) : '#E5E7EB'), borderRadius: 5, barThickness: 18 }], '점');
+
+        Charts.createStudentCompareBar('chart-analytics-hw', labels,
+            [{ label: '완료율', data: metrics.map(m => m.hwRate ?? 0), backgroundColor: metrics.map(m => m.hwRate !== null ? colorByPct(m.hwRate) : '#E5E7EB'), borderRadius: 5, barThickness: 18 }], '%');
+    },
+
+    analyticsBar(value, color) {
+        const pct = Math.min(100, Math.max(0, value));
+        return `<div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;background:var(--gray-100);border-radius:4px;height:8px">
+                <div style="width:${pct}%;background:${color};border-radius:4px;height:100%;transition:width 0.4s"></div>
+            </div>
+            <span style="font-size:0.85rem;font-weight:600;color:var(--gray-700);min-width:36px;text-align:right">${value}%</span>
+        </div>`;
     },
 
     // =========================================
