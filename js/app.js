@@ -919,6 +919,8 @@ const App = {
                 </div>
             </div>
 
+            ${this.renderSelfJournalCard(studentId, canAddProgress)}
+
             <div class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-comments"></i> 코멘트 (${comments.length}개)</h2>
@@ -960,6 +962,87 @@ const App = {
                 Charts.createRadar('chart-student-radar', subjectProgress);
             }, 50);
         }
+    },
+
+    // 이번 주 월요일 날짜 반환 (YYYY-MM-DD)
+    getWeekStart(date = new Date()) {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        d.setDate(diff);
+        return d.toISOString().split('T')[0];
+    },
+
+    // 주간 자기 진도 일지 카드 HTML 생성
+    renderSelfJournalCard(studentId, canWrite) {
+        const week = this.getWeekStart();
+        const goal = DataStore.getSelfWeeklyGoal(studentId, week);
+        const journals = DataStore.getSelfJournals(studentId);
+        const today = new Date().toISOString().split('T')[0];
+
+        // 이번 주 일지만 별도 표시 (나머지는 이전 기록)
+        const weekEnd = new Date(week);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const weekEndStr = weekEnd.toISOString().split('T')[0];
+        const thisWeekJournals = journals.filter(j => j.date >= week && j.date <= weekEndStr);
+        const prevJournals = journals.filter(j => j.date < week);
+
+        return `
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-header">
+                <h2><i class="fas fa-book-open"></i> 자기 진도 일지</h2>
+            </div>
+            <div class="card-body">
+
+                <!-- 주간 목표 -->
+                <div style="margin-bottom:20px;padding:16px;background:var(--primary-light, #f0f4ff);border-radius:10px;border-left:4px solid var(--primary)">
+                    <div style="font-weight:700;color:var(--primary);margin-bottom:8px"><i class="fas fa-bullseye"></i> 이번 주 목표 <span style="font-size:0.78rem;color:var(--gray-400)">(${week} 주)</span></div>
+                    ${canWrite ? `
+                    <div style="display:flex;gap:8px;align-items:flex-start">
+                        <textarea id="self-goal-input" rows="2" class="form-control" style="flex:1;resize:vertical" placeholder="이번 주 목표를 적어보세요...">${this.escapeHtml(goal ? goal.note : '')}</textarea>
+                        <button class="btn btn-primary btn-sm" data-action="set-self-goal" data-student-id="${studentId}" data-week="${week}" style="white-space:nowrap;margin-top:2px"><i class="fas fa-save"></i> 저장</button>
+                    </div>` : `
+                    <div style="color:var(--gray-700);white-space:pre-wrap">${goal ? this.escapeHtml(goal.note) : '<span style="color:var(--gray-400)">아직 목표가 없습니다</span>'}</div>`}
+                </div>
+
+                <!-- 진도 입력 (학생 본인만) -->
+                ${canWrite ? `
+                <div style="margin-bottom:20px">
+                    <div style="font-weight:600;color:var(--gray-700);margin-bottom:10px"><i class="fas fa-pen"></i> 오늘의 진도 기록</div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <input type="date" id="self-journal-date" class="form-control" value="${today}" style="max-width:180px">
+                        <textarea id="self-journal-note" rows="3" class="form-control" placeholder="오늘 공부한 내용을 자유롭게 적어보세요. (예: 수학 P.120~135, 영어 단어 50개)"></textarea>
+                        <div><button class="btn btn-success btn-sm" data-action="add-self-journal" data-student-id="${studentId}"><i class="fas fa-plus"></i> 기록 추가</button></div>
+                    </div>
+                </div>` : ''}
+
+                <!-- 이번 주 기록 -->
+                <div style="margin-bottom:16px">
+                    <div style="font-weight:600;color:var(--gray-600);margin-bottom:10px;font-size:0.9rem"><i class="fas fa-calendar-week"></i> 이번 주 기록 (${thisWeekJournals.length}건)</div>
+                    ${thisWeekJournals.length === 0
+                        ? '<div style="color:var(--gray-400);font-size:0.88rem;padding:8px 0">아직 이번 주 기록이 없습니다.</div>'
+                        : thisWeekJournals.map(j => `
+                        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+                            <div style="min-width:90px;font-size:0.82rem;color:var(--gray-500);padding-top:2px">${j.date}</div>
+                            <div style="flex:1;white-space:pre-wrap;font-size:0.92rem">${this.escapeHtml(j.note)}</div>
+                            ${canWrite ? `<button class="btn-icon" data-action="delete-self-journal" data-journal-id="${j.id}" data-student-id="${studentId}" title="삭제" style="color:var(--danger);font-size:0.8rem"><i class="fas fa-trash"></i></button>` : ''}
+                        </div>`).join('')}
+                </div>
+
+                <!-- 이전 기록 -->
+                ${prevJournals.length > 0 ? `
+                <details>
+                    <summary style="cursor:pointer;font-size:0.88rem;color:var(--gray-500);margin-bottom:8px"><i class="fas fa-history"></i> 이전 기록 (${prevJournals.length}건)</summary>
+                    ${prevJournals.slice(0, 30).map(j => `
+                    <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+                        <div style="min-width:90px;font-size:0.82rem;color:var(--gray-500);padding-top:2px">${j.date}</div>
+                        <div style="flex:1;white-space:pre-wrap;font-size:0.88rem;color:var(--gray-600)">${this.escapeHtml(j.note)}</div>
+                        ${canWrite ? `<button class="btn-icon" data-action="delete-self-journal" data-journal-id="${j.id}" data-student-id="${studentId}" title="삭제" style="color:var(--danger);font-size:0.8rem"><i class="fas fa-trash"></i></button>` : ''}
+                    </div>`).join('')}
+                </details>` : ''}
+
+            </div>
+        </div>`;
     },
 
     renderPlanTimeline(plan) {
@@ -1080,7 +1163,7 @@ const App = {
         const students = this.getVisibleStudents();
         const visibleIds = students.map(s => s.id);
         const allProgress = DataStore.getProgressEntries()
-            .filter(p => visibleIds.includes(p.studentId))
+            .filter(p => visibleIds.includes(p.studentId) && p.planId !== 'self_journal' && p.planId !== 'self_goal')
             .sort((a, b) => new Date(b.date) - new Date(a.date))
             .slice(0, 30);
 
@@ -2483,6 +2566,47 @@ const App = {
             case 'edit-grade': {
                 const gradeObj = DataStore.getGrade(target.dataset.gradeId);
                 if (gradeObj) this.showGradeForm(gradeObj);
+                break;
+            }
+
+            // 자기 진도 일지 actions
+            case 'set-self-goal': {
+                const week = target.dataset.week;
+                const sid = target.dataset.studentId;
+                const goalText = (document.getElementById('self-goal-input') || {}).value || '';
+                if (!goalText.trim()) { this.toast('목표를 입력해주세요.', 'warning'); break; }
+                try {
+                    await DataStore.setSelfWeeklyGoal(sid, week, goalText.trim());
+                    this.toast('주간 목표가 저장되었습니다!', 'success');
+                    this.renderStudentDetail(sid);
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'add-self-journal': {
+                const sid = target.dataset.studentId;
+                const dateEl = document.getElementById('self-journal-date');
+                const noteEl = document.getElementById('self-journal-note');
+                const date = (dateEl || {}).value || '';
+                const note = (noteEl || {}).value || '';
+                if (!date) { this.toast('날짜를 선택해주세요.', 'warning'); break; }
+                if (!note.trim()) { this.toast('내용을 입력해주세요.', 'warning'); break; }
+                try {
+                    await DataStore.addSelfJournal(sid, date, note.trim());
+                    this.toast('진도가 기록되었습니다!', 'success');
+                    this.renderStudentDetail(sid);
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'delete-self-journal': {
+                if (!confirm('이 기록을 삭제하시겠습니까?')) break;
+                const sid = target.dataset.studentId;
+                try {
+                    await DataStore.deleteSelfJournal(target.dataset.journalId);
+                    this.toast('삭제되었습니다.', 'success');
+                    this.renderStudentDetail(sid);
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
                 break;
             }
 

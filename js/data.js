@@ -262,8 +262,40 @@ const DataStore = {
 
     getStudentProgress(studentId) {
         return this.getProgressEntries()
-            .filter(p => p.studentId === studentId)
+            .filter(p => p.studentId === studentId && p.planId !== 'self_journal' && p.planId !== 'self_goal')
             .sort((a, b) => new Date(b.date) - new Date(a.date));
+    },
+
+    // === 자기 진도 일지 (학생 직접 작성) ===
+    getSelfJournals(studentId) {
+        return this.getProgressEntries()
+            .filter(p => p.studentId === studentId && p.planId === 'self_journal')
+            .sort((a, b) => b.date.localeCompare(a.date));
+    },
+
+    getSelfWeeklyGoal(studentId, week) {
+        return this.getProgressEntries()
+            .find(p => p.studentId === studentId && p.planId === 'self_goal' && p.date === week) || null;
+    },
+
+    async addSelfJournal(studentId, date, note) {
+        return await this._add(this.TABLES.PROGRESS, {
+            studentId, planId: 'self_journal', date, amount: 0, note
+        });
+    },
+
+    async deleteSelfJournal(id) {
+        return await this._delete(this.TABLES.PROGRESS, id);
+    },
+
+    async setSelfWeeklyGoal(studentId, week, goal) {
+        const existing = this.getSelfWeeklyGoal(studentId, week);
+        if (existing) {
+            return await this._update(this.TABLES.PROGRESS, existing.id, { note: goal });
+        }
+        return await this._add(this.TABLES.PROGRESS, {
+            studentId, planId: 'self_goal', date: week, amount: 0, note: goal
+        });
     },
 
     // === COMMENTS ===
