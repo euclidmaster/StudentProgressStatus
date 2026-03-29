@@ -2295,6 +2295,68 @@ th.sortable i {
 .att-status-btn:hover { background: var(--gray-100); }
 .att-status-btn.active { font-weight: 600; }
 
+/* ===== 시험 플래너 ===== */
+.exam-card {
+    background: white;
+    border: 1px solid var(--gray-100);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: box-shadow 0.15s;
+}
+.exam-card:last-child { margin-bottom: 0; }
+.exam-card:hover { box-shadow: var(--shadow-md); }
+.exam-card.exam-past { opacity: 0.6; }
+.exam-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.exam-name { font-size: 1rem; font-weight: 700; color: var(--gray-800); margin-bottom: 4px; }
+.exam-date { font-size: 0.8rem; color: var(--gray-400); }
+.exam-dday {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.exam-dday.past { background: var(--gray-100); color: var(--gray-400); }
+.exam-dday.today { background: var(--danger); color: white; }
+.exam-dday.soon { background: #FFF7ED; color: var(--warning); border: 1px solid var(--warning); }
+.exam-dday.normal { background: #EEF2FF; color: var(--primary); }
+.exam-checklist { border-top: 1px solid var(--gray-100); padding-top: 10px; }
+.exam-check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.1s;
+}
+.exam-check-item:hover { background: var(--gray-50); }
+.exam-check-item.done .exam-check-text { text-decoration: line-through; color: var(--gray-300); }
+.exam-check-subject {
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    background: var(--primary);
+    color: white;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.exam-check-text { flex: 1; }
+.exam-item-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
 /* ===== 월간 리포트 ===== */
 .report-summary-grid {
     display: grid;

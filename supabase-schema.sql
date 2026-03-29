@@ -314,3 +314,22 @@ CREATE TABLE IF NOT EXISTS homework (
 ALTER TABLE homework ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon_all" ON homework;
 CREATE POLICY "anon_all" ON homework FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ============================================
+-- 마이그레이션: 시험 플래너 테이블 추가
+-- 아래 SQL을 Supabase SQL Editor에서 실행하세요
+-- ============================================
+CREATE TABLE IF NOT EXISTS exam_plans (
+    id TEXT PRIMARY KEY,
+    exam_name TEXT DEFAULT '',
+    exam_date TEXT DEFAULT '',
+    student_ids JSONB DEFAULT '[]',
+    checklist JSONB DEFAULT '[]',
+    assigned_by TEXT DEFAULT '',
+    assigned_by_id TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+ALTER TABLE exam_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all" ON exam_plans;
+CREATE POLICY "anon_all" ON exam_plans FOR ALL TO anon USING (true) WITH CHECK (true);

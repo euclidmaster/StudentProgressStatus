@@ -13,7 +13,8 @@ const DataStore = {
         BOARD_POSTS: 'board_posts',
         BOARD_EVENTS: 'board_events',
         ATTENDANCE: 'attendance',
-        HOMEWORK: 'homework'
+        HOMEWORK: 'homework',
+        EXAM_PLANS: 'exam_plans'
     },
     CURRENT_USER_KEY: 'sps_current_user',
 
@@ -29,7 +30,8 @@ const DataStore = {
         board_posts: [],
         board_events: [],
         attendance: [],
-        homework: []
+        homework: [],
+        exam_plans: []
     },
 
     _syncEnabled: true,
@@ -756,6 +758,36 @@ const DataStore = {
         if (!hw) return;
         const completedBy = (hw.completedBy || []).filter(id => id !== studentId);
         return await this._update(this.TABLES.HOMEWORK, hwId, { completedBy });
+    },
+
+    // === EXAM PLANS (시험 플래너) ===
+    getExamPlans() {
+        return this._getAll(this.TABLES.EXAM_PLANS)
+            .sort((a, b) => (a.examDate || '').localeCompare(b.examDate || ''));
+    },
+
+    getExamPlansForStudent(studentId) {
+        return this.getExamPlans().filter(ep => {
+            const ids = ep.studentIds || [];
+            return ids.length === 0 || ids.includes(studentId);
+        });
+    },
+
+    async addExamPlan(plan) { return await this._add(this.TABLES.EXAM_PLANS, plan); },
+    async deleteExamPlan(id) { return await this._delete(this.TABLES.EXAM_PLANS, id); },
+
+    // 체크리스트 아이템 완료/취소 토글
+    async toggleExamCheckItem(planId, itemId, studentId, checked) {
+        const plan = this._getById(this.TABLES.EXAM_PLANS, planId);
+        if (!plan) return;
+        const checklist = (plan.checklist || []).map(item => {
+            if (item.id !== itemId) return item;
+            const completedBy = checked
+                ? [...new Set([...(item.completedBy || []), studentId])]
+                : (item.completedBy || []).filter(id => id !== studentId);
+            return { ...item, completedBy };
+        });
+        return await this._update(this.TABLES.EXAM_PLANS, planId, { checklist });
     },
 
 };

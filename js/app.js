@@ -413,7 +413,7 @@ const App = {
             item.classList.toggle('active', item.dataset.view === view);
         });
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', report: '월간 리포트', teachers: '선생님 관리' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', report: '월간 리포트', teachers: '선생님 관리' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -423,7 +423,7 @@ const App = {
         const viewTables = {
             'dashboard':      [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES],
             'students':       [],
-            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE, T.HOMEWORK],
+            'student-detail': [T.PLANS, T.PROGRESS, T.COMMENTS, T.GRADES, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS],
             'plans':          [T.PLANS],
             'progress':       [T.PLANS, T.PROGRESS],
             'comments':       [T.PLANS, T.COMMENTS],
@@ -433,6 +433,7 @@ const App = {
             'tasks':          [],
             'attendance':     [T.ATTENDANCE],
             'homework':       [T.HOMEWORK],
+            'exam':           [T.EXAM_PLANS],
             'report':         [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.GRADES, T.COMMENTS],
             'teachers':       [],
         };
@@ -463,6 +464,7 @@ const App = {
             case 'tasks': this.renderTasks(); break;
             case 'attendance': this.renderAttendance(); break;
             case 'homework': this.renderHomework(); break;
+            case 'exam': this.renderExam(); break;
             case 'report': this.renderReport(data.studentId, data.ym); break;
             case 'teachers': this.renderTeachers(); break;
         }
@@ -940,6 +942,8 @@ const App = {
             </div>
 
             ${this.renderAttendanceMiniCard(studentId, canEdit)}
+
+            ${this.renderExamMiniCard(studentId)}
 
             ${this.renderHomeworkMiniCard(studentId)}
 
@@ -2914,6 +2918,73 @@ const App = {
                 break;
             }
 
+            // 시험 플래너 actions
+            case 'exam-add-item': {
+                const container = document.getElementById('exam-checklist-rows');
+                if (!container) break;
+                const row = document.createElement('div');
+                row.className = 'exam-item-input-row';
+                row.innerHTML = `
+                    <input type="text" class="form-control exam-item-subject" placeholder="과목 (예: 수학)" style="width:100px;flex-shrink:0">
+                    <input type="text" class="form-control exam-item-text" placeholder="항목 내용 (예: 2단원 개념 정리)" style="flex:1">
+                    <button class="btn-icon" style="color:var(--danger)" onclick="this.closest('.exam-item-input-row').remove()"><i class="fas fa-times"></i></button>`;
+                container.appendChild(row);
+                row.querySelector('.exam-item-text').focus();
+                break;
+            }
+
+            case 'add-exam-plan': {
+                const name = (document.getElementById('exam-name') || {}).value || '';
+                if (!name.trim()) { this.toast('시험명을 입력해주세요.', 'warning'); break; }
+                const date = (document.getElementById('exam-date') || {}).value || '';
+                const checked = [...document.querySelectorAll('.exam-student-chk:checked')].map(el => el.value);
+                // 체크리스트 아이템 수집
+                const checklist = [...document.querySelectorAll('.exam-item-input-row')].map((row, i) => ({
+                    id: `ci_${Date.now()}_${i}`,
+                    subject: (row.querySelector('.exam-item-subject') || {}).value || '',
+                    text: (row.querySelector('.exam-item-text') || {}).value || '',
+                    completedBy: []
+                })).filter(item => item.text.trim());
+                try {
+                    await DataStore.addExamPlan({
+                        examName: name.trim(),
+                        examDate: date || null,
+                        studentIds: checked,
+                        checklist,
+                        assignedBy: this.currentUser ? this.currentUser.name : '',
+                        assignedById: this.currentUser ? this.currentUser.id : ''
+                    });
+                    this.toast('시험 일정이 등록되었습니다.', 'success');
+                    this.renderExam();
+                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'delete-exam-plan': {
+                if (!confirm('이 시험 일정을 삭제하시겠습니까?')) break;
+                try {
+                    await DataStore.deleteExamPlan(target.dataset.planId);
+                    this.toast('삭제되었습니다.', 'success');
+                    this.renderExam();
+                } catch(err) { this.toast('삭제 실패: ' + err.message, 'error'); }
+                break;
+            }
+
+            case 'exam-toggle-item': {
+                const { planId, itemId, studentId } = target.dataset;
+                const checked = target.checked;
+                try {
+                    await DataStore.toggleExamCheckItem(planId, itemId, studentId, checked);
+                    if (this.currentView === 'exam') this.renderExam();
+                    else if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
+                    this.updateExamBadge();
+                } catch(err) {
+                    target.checked = !checked; // 롤백
+                    this.toast('저장 실패: ' + err.message, 'error');
+                }
+                break;
+            }
+
             // 숙제 관리 actions
             case 'add-homework': {
                 const title = (document.getElementById('hw-title') || {}).value || '';
@@ -2973,6 +3044,246 @@ const App = {
                 break;
             }
         }
+    },
+
+    // =========================================
+    //  VIEW: EXAM PLANNER (시험 플래너)
+    // =========================================
+    renderExam() {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const isStudent = role === 'student';
+        const today = this.getLocalDateStr();
+        const students = this.getVisibleStudents();
+
+        // D-day 계산
+        const getDday = (dateStr) => {
+            if (!dateStr) return null;
+            const diff = Math.ceil((new Date(dateStr) - new Date(today)) / 86400000);
+            return diff;
+        };
+        const ddayLabel = (d) => {
+            if (d === null) return '';
+            if (d < 0) return `<span class="exam-dday past">D+${Math.abs(d)}</span>`;
+            if (d === 0) return `<span class="exam-dday today">D-DAY</span>`;
+            if (d <= 7) return `<span class="exam-dday soon">D-${d}</span>`;
+            return `<span class="exam-dday normal">D-${d}</span>`;
+        };
+
+        if (isStudent) {
+            // ── 학생 뷰 ──
+            const studentId = this.currentUser.studentId;
+            const plans = DataStore.getExamPlansForStudent(studentId);
+            const upcoming = plans.filter(ep => !ep.examDate || ep.examDate >= today);
+            const past = plans.filter(ep => ep.examDate && ep.examDate < today);
+
+            const planCard = (ep, isPast) => {
+                const d = getDday(ep.examDate);
+                const checklist = ep.checklist || [];
+                const myDone = checklist.filter(item => (item.completedBy || []).includes(studentId)).length;
+                const rate = checklist.length > 0 ? Math.round((myDone / checklist.length) * 100) : null;
+                return `
+                <div class="exam-card ${isPast ? 'exam-past' : ''}">
+                    <div class="exam-card-header">
+                        <div>
+                            <div class="exam-name">${this.escapeHtml(ep.examName)}</div>
+                            <div class="exam-date"><i class="fas fa-calendar"></i> ${ep.examDate || '날짜 미정'}</div>
+                        </div>
+                        <div style="text-align:right">
+                            ${ddayLabel(d)}
+                            ${rate !== null ? `<div style="font-size:0.78rem;color:var(--gray-400);margin-top:4px">준비 ${myDone}/${checklist.length}</div>` : ''}
+                        </div>
+                    </div>
+                    ${checklist.length > 0 ? `
+                    <div class="exam-checklist">
+                        ${checklist.map(item => {
+                            const done = (item.completedBy || []).includes(studentId);
+                            return `<label class="exam-check-item ${done ? 'done' : ''}">
+                                <input type="checkbox" ${done ? 'checked' : ''} ${isPast ? 'disabled' : ''}
+                                    data-action="exam-toggle-item"
+                                    data-plan-id="${ep.id}"
+                                    data-item-id="${item.id}"
+                                    data-student-id="${studentId}"
+                                    data-checked="${done ? '1' : '0'}">
+                                <span class="exam-check-subject">${this.escapeHtml(item.subject || '')}</span>
+                                <span class="exam-check-text">${this.escapeHtml(item.text)}</span>
+                            </label>`;
+                        }).join('')}
+                        ${rate !== null ? `
+                        <div style="margin-top:10px">
+                            <div style="background:var(--gray-100);border-radius:6px;height:8px;overflow:hidden">
+                                <div style="width:${rate}%;background:${rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warning)' : 'var(--primary)'};height:100%;border-radius:6px;transition:width 0.4s"></div>
+                            </div>
+                            <div style="text-align:right;font-size:0.75rem;font-weight:600;margin-top:2px;color:var(--gray-500)">${rate}% 완료</div>
+                        </div>` : ''}
+                    </div>` : '<div style="padding:10px 0;color:var(--gray-300);font-size:0.85rem">준비 항목이 없습니다.</div>'}
+                </div>`;
+            };
+
+            const html = `
+            <div class="card" style="margin-bottom:16px">
+                <div class="card-header"><h2><i class="fas fa-hourglass-half"></i> 다가오는 시험 (${upcoming.length})</h2></div>
+                <div class="card-body" style="padding:${upcoming.length ? '12px' : ''}">
+                    ${upcoming.length === 0
+                        ? '<div class="empty-state" style="padding:30px"><i class="fas fa-check-circle" style="color:var(--success)"></i><h3>예정된 시험이 없습니다</h3></div>'
+                        : upcoming.map(ep => planCard(ep, false)).join('')}
+                </div>
+            </div>
+            ${past.length > 0 ? `
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-history"></i> 지난 시험 (${past.length})</h2></div>
+                <div class="card-body" style="padding:12px">
+                    ${past.map(ep => planCard(ep, true)).join('')}
+                </div>
+            </div>` : ''}`;
+
+            document.getElementById('content-area').innerHTML = html;
+            this.updateExamBadge();
+            return;
+        }
+
+        // ── 선생/원장 뷰 ──
+        const allPlans = DataStore.getExamPlans();
+        const upcoming = allPlans.filter(ep => !ep.examDate || ep.examDate >= today);
+        const past = allPlans.filter(ep => ep.examDate && ep.examDate < today);
+
+        // 학생 체크박스
+        const studentCheckboxes = students.map(s =>
+            `<label style="display:flex;align-items:center;gap:6px;margin-right:12px;cursor:pointer">
+                <input type="checkbox" class="exam-student-chk" value="${s.id}"> ${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})
+             </label>`
+        ).join('');
+
+        const managerCard = (ep, isPast) => {
+            const d = getDday(ep.examDate);
+            const checklist = ep.checklist || [];
+            const assignedStudents = ep.studentIds && ep.studentIds.length > 0
+                ? ep.studentIds.map(id => { const s = DataStore.getStudent(id); return s ? s.name : id; }).join(', ')
+                : '전체';
+            return `
+            <div class="exam-card ${isPast ? 'exam-past' : ''}">
+                <div class="exam-card-header">
+                    <div>
+                        <div class="exam-name">${this.escapeHtml(ep.examName)}</div>
+                        <div class="exam-date"><i class="fas fa-calendar"></i> ${ep.examDate || '날짜 미정'} &nbsp;·&nbsp; <i class="fas fa-users"></i> ${this.escapeHtml(assignedStudents)}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        ${ddayLabel(d)}
+                        <button class="btn-icon" data-action="delete-exam-plan" data-plan-id="${ep.id}" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+                ${checklist.length > 0 ? `
+                <div style="padding:8px 0 0">
+                    <div style="font-size:0.78rem;font-weight:600;color:var(--gray-500);margin-bottom:6px">준비 항목 (${checklist.length}개)</div>
+                    ${checklist.map(item => `
+                    <div style="font-size:0.83rem;padding:3px 0;display:flex;align-items:center;gap:6px">
+                        <i class="fas fa-check-circle" style="color:var(--gray-200)"></i>
+                        ${item.subject ? `<span class="badge badge-primary" style="font-size:0.68rem">${this.escapeHtml(item.subject)}</span>` : ''}
+                        <span>${this.escapeHtml(item.text)}</span>
+                    </div>`).join('')}
+                </div>` : ''}
+            </div>`;
+        };
+
+        const html = `
+        <!-- 시험 일정 추가 폼 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h2><i class="fas fa-plus"></i> 시험 일정 추가</h2></div>
+            <div class="card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>시험명 <span class="required">*</span></label>
+                        <input type="text" id="exam-name" class="form-control" placeholder="예: 1학기 중간고사, 수능 모의고사">
+                    </div>
+                    <div class="form-group">
+                        <label>시험 날짜</label>
+                        <input type="date" id="exam-date" class="form-control" value="${today}">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>대상 학생 <span style="font-size:0.78rem;color:var(--gray-400)">(미선택 시 전체)</span></label>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;border:1px solid var(--gray-200);border-radius:8px;min-height:38px">
+                        ${studentCheckboxes || '<span style="color:var(--gray-300);font-size:0.85rem">담당 학생이 없습니다</span>'}
+                    </div>
+                </div>
+                <!-- 준비 항목 동적 추가 -->
+                <div style="margin-bottom:12px">
+                    <label style="font-weight:600;margin-bottom:8px;display:block">준비 체크리스트 항목</label>
+                    <div id="exam-checklist-rows"></div>
+                    <button class="btn btn-outline btn-sm" data-action="exam-add-item" style="margin-top:6px">
+                        <i class="fas fa-plus"></i> 항목 추가
+                    </button>
+                </div>
+                <button class="btn btn-primary" data-action="add-exam-plan"><i class="fas fa-paper-plane"></i> 등록하기</button>
+            </div>
+        </div>
+
+        <!-- 다가오는 시험 -->
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h2><i class="fas fa-hourglass-half"></i> 예정된 시험 (${upcoming.length})</h2></div>
+            <div class="card-body" style="padding:${upcoming.length ? '12px' : ''}">
+                ${upcoming.length === 0
+                    ? '<div class="empty-state" style="padding:24px"><i class="fas fa-calendar-plus"></i><h3>예정된 시험이 없습니다</h3></div>'
+                    : upcoming.map(ep => managerCard(ep, false)).join('')}
+            </div>
+        </div>
+
+        <!-- 지난 시험 -->
+        ${past.length > 0 ? `
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-history"></i> 지난 시험 (${past.length})</h2></div>
+            <div class="card-body" style="padding:12px">
+                ${past.map(ep => managerCard(ep, true)).join('')}
+            </div>
+        </div>` : ''}`;
+
+        document.getElementById('content-area').innerHTML = html;
+    },
+
+    // 시험 플래너 배지 업데이트 (학생용 - 임박 시험)
+    updateExamBadge() {
+        const badge = document.getElementById('exam-badge');
+        if (!badge) return;
+        const role = this.currentUser ? this.currentUser.role : '';
+        if (role === 'student' && this.currentUser.studentId) {
+            const today = this.getLocalDateStr();
+            const week = new Date(new Date(today).getTime() + 7 * 86400000).toISOString().slice(0, 10);
+            const soon = DataStore.getExamPlansForStudent(this.currentUser.studentId)
+                .filter(ep => ep.examDate && ep.examDate >= today && ep.examDate <= week).length;
+            badge.textContent = soon;
+            badge.style.display = soon > 0 ? '' : 'none';
+        } else {
+            badge.style.display = 'none';
+        }
+    },
+
+    // 학생 상세 시험 미니카드
+    renderExamMiniCard(studentId) {
+        const today = this.getLocalDateStr();
+        const plans = DataStore.getExamPlansForStudent(studentId)
+            .filter(ep => !ep.examDate || ep.examDate >= today)
+            .slice(0, 3);
+        if (plans.length === 0) return '';
+
+        const rows = plans.map(ep => {
+            const diff = ep.examDate ? Math.ceil((new Date(ep.examDate) - new Date(today)) / 86400000) : null;
+            const checklist = ep.checklist || [];
+            const done = checklist.filter(item => (item.completedBy || []).includes(studentId)).length;
+            const color = diff !== null && diff <= 3 ? 'var(--danger)' : diff !== null && diff <= 7 ? 'var(--warning)' : 'var(--primary)';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-100)">
+                <span style="flex:1;font-weight:600;font-size:0.85rem">${this.escapeHtml(ep.examName)}</span>
+                ${ep.examDate ? `<span style="font-size:0.75rem;font-weight:700;color:${color}">${diff === 0 ? 'D-DAY' : diff !== null ? `D-${diff}` : ''}</span>` : ''}
+                ${checklist.length > 0 ? `<span style="font-size:0.72rem;color:var(--gray-400)">${done}/${checklist.length} 완료</span>` : ''}
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+                <h2><i class="fas fa-clipboard-list"></i> 시험 일정</h2>
+                <span class="badge badge-primary">${plans.length}개 예정</span>
+            </div>
+            <div class="card-body" style="padding:8px 20px">${rows}</div>
+        </div>`;
     },
 
     // =========================================
