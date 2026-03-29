@@ -964,13 +964,20 @@ const App = {
         }
     },
 
+    // 로컬 날짜 문자열 반환 (YYYY-MM-DD) - 타임존 보정
+    getLocalDateStr(date = new Date()) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    },
+
     // 이번 주 월요일 날짜 반환 (YYYY-MM-DD)
     getWeekStart(date = new Date()) {
         const d = new Date(date);
         const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        return d.toISOString().split('T')[0];
+        d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+        return this.getLocalDateStr(d);
     },
 
     // 주간 자기 진도 일지 카드 HTML 생성
@@ -978,7 +985,7 @@ const App = {
         const week = this.getWeekStart();
         const goal = DataStore.getSelfWeeklyGoal(studentId, week);
         const journals = DataStore.getSelfJournals(studentId);
-        const today = new Date().toISOString().split('T')[0];
+        const today = this.getLocalDateStr();
 
         // 이번 주 일지만 별도 표시 (나머지는 이전 기록)
         const weekEnd = new Date(week);
