@@ -220,6 +220,88 @@ const Charts = {
         });
     },
 
+    // 성적 추이 라인 차트 (학생 상세용)
+    createGradeTrend(canvasId, grades, subjectFilter) {
+        this.destroy(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+
+        // 날짜순 정렬
+        const sorted = [...grades].sort((a, b) =>
+            (a.examDate || a.createdAt || '').localeCompare(b.examDate || b.createdAt || ''));
+
+        // 전체 과목 수집
+        const allSubjects = [...new Set(
+            sorted.flatMap(g => (g.subjects || []).map(s => s.subject))
+        )].sort();
+        const subjects = subjectFilter ? [subjectFilter] : allSubjects;
+
+        // x축 레이블 (시험명)
+        const labels = sorted.map(g => g.examName || g.examType || g.examDate || '');
+
+        // 과목별 데이터셋
+        const datasets = subjects.map((subj, i) => ({
+            label: subj,
+            data: sorted.map(g => {
+                const s = (g.subjects || []).find(s => s.subject === subj);
+                return s ? s.score : null;
+            }),
+            borderColor: this.colors[i % this.colors.length],
+            backgroundColor: this.colors[i % this.colors.length] + '22',
+            pointBackgroundColor: this.colors[i % this.colors.length],
+            pointRadius: 5,
+            tension: 0.3,
+            spanGaps: true
+        }));
+
+        // 평균 데이터셋
+        if (!subjectFilter) {
+            datasets.push({
+                label: '평균',
+                data: sorted.map(g => g.totalAvg || null),
+                borderColor: '#1F2937',
+                backgroundColor: 'transparent',
+                borderDash: [6, 3],
+                pointRadius: 4,
+                pointBackgroundColor: '#1F2937',
+                tension: 0.3,
+                spanGaps: true
+            });
+        }
+
+        this.instances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: 0, max: 100,
+                        ticks: { stepSize: 20, font: { family: "'Noto Sans KR', sans-serif", size: 11 } },
+                        grid: { color: '#F3F4F6' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { family: "'Noto Sans KR', sans-serif", size: 11 }, maxRotation: 30 }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { usePointStyle: true, font: { family: "'Noto Sans KR', sans-serif", size: 11 }, padding: 14 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.dataset.label}: ${ctx.raw !== null ? ctx.raw + '점' : '-'}`
+                        }
+                    }
+                }
+            }
+        });
+    },
+
     // 학생 비교 수평 바 차트 (범용)
     createStudentCompareBar(canvasId, labels, datasets, xSuffix = '%', xMax = 100) {
         this.destroy(canvasId);

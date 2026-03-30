@@ -964,10 +964,19 @@ const App = {
             <div class="card" style="margin-bottom:20px">
                 <div class="card-header">
                     <h2><i class="fas fa-trophy"></i> 성적 (${studentGrades.length}건)</h2>
-                    ${canEdit ? `<button class="btn btn-sm btn-primary" data-action="add-grade" data-student-id="${studentId}"><i class="fas fa-plus"></i> 성적 입력</button>` : ''}
+                    <div style="display:flex;gap:6px;align-items:center">
+                        ${studentGrades.length > 1 ? `
+                        <button class="btn btn-sm ${this._gradeDetailView!=='trend'?'btn-outline':'btn-primary'}" data-action="grade-detail-view" data-mode="table" data-student-id="${studentId}"><i class="fas fa-table"></i></button>
+                        <button class="btn btn-sm ${this._gradeDetailView==='trend'?'btn-primary':'btn-outline'}" data-action="grade-detail-view" data-mode="trend" data-student-id="${studentId}"><i class="fas fa-chart-line"></i> 추이</button>
+                        ` : ''}
+                        ${canEdit ? `<button class="btn btn-sm btn-primary" data-action="add-grade" data-student-id="${studentId}"><i class="fas fa-plus"></i> 성적 입력</button>` : ''}
+                    </div>
                 </div>
-                <div class="card-body ${studentGrades.length > 0 ? 'no-padding' : ''}">
+                <div class="card-body ${studentGrades.length > 0 && this._gradeDetailView !== 'trend' ? 'no-padding' : ''}">
                     ${studentGrades.length === 0 ? '<div class="empty-state"><i class="fas fa-trophy"></i><h3>등록된 성적이 없습니다</h3><p>시험 성적을 입력해주세요.</p></div>' :
+                    this._gradeDetailView === 'trend' ? `
+                        <div style="height:280px"><canvas id="chart-grade-trend-detail"></canvas></div>
+                    ` :
                         `<div class="table-wrapper"><table class="pivot-table">
                             <thead><tr><th>시험</th>${(() => {
                                 const allSubs = new Set();
@@ -1053,6 +1062,13 @@ const App = {
             setTimeout(() => {
                 Charts.createSubjectBar('chart-student-bar', subjectProgress);
                 Charts.createRadar('chart-student-radar', subjectProgress);
+            }, 50);
+        }
+
+        // 성적 추이 차트
+        if (this._gradeDetailView === 'trend' && studentGrades.length > 1) {
+            setTimeout(() => {
+                Charts.createGradeTrend('chart-grade-trend-detail', studentGrades);
             }, 50);
         }
     },
@@ -2983,6 +2999,10 @@ const App = {
                 break;
             }
 
+            case 'report-print':
+                window.print();
+                break;
+
             // 상담 일지 actions
             case 'add-consultation': {
                 const studentId = (document.getElementById('consult-student-id') || {}).value || '';
@@ -3029,6 +3049,12 @@ const App = {
 
             case 'go-notifications':
                 this.navigate('notifications');
+                break;
+
+            // 성적 추이 탭 전환
+            case 'grade-detail-view':
+                this._gradeDetailView = target.dataset.mode;
+                this.renderStudentDetail(target.dataset.studentId);
                 break;
 
             // 시간표 actions
@@ -4867,7 +4893,8 @@ const App = {
             <button class="btn btn-outline btn-sm" data-action="report-prev-month"><i class="fas fa-chevron-left"></i></button>
             <strong style="font-size:1rem;min-width:90px;text-align:center">${year}년 ${month}월</strong>
             <button class="btn btn-outline btn-sm" data-action="report-next-month"><i class="fas fa-chevron-right"></i></button>
-        </div>`;
+        </div>
+        <button class="btn btn-outline btn-sm" data-action="report-print" style="margin-left:auto"><i class="fas fa-print"></i> 인쇄 / PDF</button>`;
 
         // 컨트롤 바
         const controlBar = `
