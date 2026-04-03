@@ -2934,6 +2934,10 @@ const App = {
                 this.showTeacherForm();
                 break;
 
+            case 'view-teacher':
+                this.showTeacherDetail(target.dataset.teacherId);
+                break;
+
             case 'edit-teacher-assignment':
                 this.showTeacherEditAssignment(target.dataset.teacherId);
                 break;
@@ -5446,6 +5450,98 @@ const App = {
     // =========================================
     //  VIEW: TEACHERS (선생님 관리 - 원장 전용)
     // =========================================
+    showTeacherDetail(teacherId) {
+        const t = DataStore.getTeacher(teacherId);
+        if (!t) return;
+
+        const assigned = (t.assignedStudentIds || []).map(sid => DataStore.getStudent(sid)).filter(Boolean);
+        const consultations = DataStore.getConsultations().filter(c => c.teacherId === teacherId);
+        const schedules = DataStore.getSchedules().filter(s => s.teacherId === teacherId);
+
+        const roleLabel = { director: '원장', teacher: '선생님', student: '학생', parent: '학부모' }[t.role] || t.role;
+
+        const html = `
+            <div style="display:flex;flex-direction:column;gap:20px">
+                <!-- 기본 정보 -->
+                <div style="display:flex;align-items:center;gap:16px;padding:16px;background:var(--gray-50);border-radius:var(--radius)">
+                    <div style="width:64px;height:64px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#fff;flex-shrink:0">
+                        <i class="fas fa-user-tie"></i>
+                    </div>
+                    <div>
+                        <div style="font-size:1.2rem;font-weight:700">${this.escapeHtml(t.name)}</div>
+                        <div style="color:var(--gray-500);font-size:0.9rem;margin-top:2px">
+                            <span class="badge badge-primary">${roleLabel}</span>
+                            <code style="margin-left:8px;font-size:0.82rem">${this.escapeHtml(t.loginId)}</code>
+                        </div>
+                        <div style="color:var(--gray-400);font-size:0.82rem;margin-top:4px">
+                            가입일: ${this.escapeHtml(t.regDate || '-')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 담당 학생 -->
+                <div>
+                    <div style="font-weight:600;margin-bottom:8px;font-size:0.95rem"><i class="fas fa-users" style="color:var(--primary)"></i> 담당 학생 (${assigned.length}명)</div>
+                    ${assigned.length === 0
+                        ? '<div style="color:var(--gray-400);font-size:0.88rem">담당 학생 없음</div>'
+                        : `<div style="display:flex;flex-wrap:wrap;gap:8px">
+                            ${assigned.map(s => `
+                                <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:6px 12px;font-size:0.88rem">
+                                    <strong>${this.escapeHtml(s.name)}</strong>
+                                    <span style="color:var(--gray-400);margin-left:4px">${this.escapeHtml(s.grade)} ${this.escapeHtml(s.className)}</span>
+                                </div>`).join('')}
+                           </div>`}
+                </div>
+
+                <!-- 담당 시간표 -->
+                <div>
+                    <div style="font-weight:600;margin-bottom:8px;font-size:0.95rem"><i class="fas fa-calendar-alt" style="color:var(--primary)"></i> 담당 수업 (${schedules.length}개)</div>
+                    ${schedules.length === 0
+                        ? '<div style="color:var(--gray-400);font-size:0.88rem">등록된 수업 없음</div>'
+                        : `<div style="display:flex;flex-direction:column;gap:6px">
+                            ${schedules.map(sc => `
+                                <div style="display:flex;align-items:center;gap:8px;font-size:0.88rem;background:var(--gray-50);border-radius:var(--radius-sm);padding:6px 10px">
+                                    <span style="background:${sc.color||'#4F46E5'};color:#fff;border-radius:4px;padding:2px 7px;font-size:0.78rem">${this.escapeHtml(sc.dayOfWeek)}</span>
+                                    <span>${this.escapeHtml(sc.startTime)}~${this.escapeHtml(sc.endTime)}</span>
+                                    <strong>${this.escapeHtml(sc.subject)}</strong>
+                                    ${sc.room ? `<span style="color:var(--gray-400)">${this.escapeHtml(sc.room)}</span>` : ''}
+                                </div>`).join('')}
+                           </div>`}
+                </div>
+
+                <!-- 최근 상담 -->
+                <div>
+                    <div style="font-weight:600;margin-bottom:8px;font-size:0.95rem"><i class="fas fa-comments" style="color:var(--primary)"></i> 최근 상담 (총 ${consultations.length}건)</div>
+                    ${consultations.length === 0
+                        ? '<div style="color:var(--gray-400);font-size:0.88rem">상담 기록 없음</div>'
+                        : `<div style="display:flex;flex-direction:column;gap:6px">
+                            ${consultations.slice(0,5).map(c => {
+                                const student = DataStore.getStudent(c.studentId);
+                                return `<div style="font-size:0.88rem;border-left:3px solid var(--primary);padding:6px 10px;background:var(--gray-50);border-radius:0 var(--radius-sm) var(--radius-sm) 0">
+                                    <span style="color:var(--gray-400)">${this.escapeHtml(c.date)}</span>
+                                    <strong style="margin-left:8px">${student ? this.escapeHtml(student.name) : '-'}</strong>
+                                    <span class="badge badge-ghost" style="margin-left:6px;font-size:0.75rem">${this.escapeHtml(c.type)}</span>
+                                </div>`;
+                            }).join('')}
+                            ${consultations.length > 5 ? `<div style="color:var(--gray-400);font-size:0.82rem;text-align:center">외 ${consultations.length - 5}건 더 있음</div>` : ''}
+                           </div>`}
+                </div>
+            </div>
+        `;
+
+        const fullHtml = html + `
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-200)">
+                <button class="btn btn-outline" data-action="edit-teacher-assignment" data-teacher-id="${t.id}">
+                    <i class="fas fa-user-plus"></i> 학생 지정 변경
+                </button>
+                <button class="btn btn-ghost" id="teacher-detail-close" style="color:var(--gray-500)">닫기</button>
+            </div>`;
+
+        this.openModal(`${t.name} 선생님 정보`, fullHtml);
+        document.getElementById('teacher-detail-close')?.addEventListener('click', () => this.closeModal());
+    },
+
+    // =========================================
     renderTeachers() {
         if (!this.currentUser || this.currentUser.role !== 'director') {
             this.navigate('dashboard');
@@ -5502,7 +5598,10 @@ const App = {
                     const assigned = (t.assignedStudentIds || []).map(sid => DataStore.getStudent(sid)).filter(Boolean);
                     return `<div class="card teacher-card" style="margin-bottom:16px">
                         <div class="card-header">
-                            <h2><i class="fas fa-user-tie"></i> ${this.escapeHtml(t.name)}
+                            <h2>
+                                <span class="teacher-name-link" data-action="view-teacher" data-teacher-id="${t.id}" style="cursor:pointer;color:var(--primary)" title="선생님 정보 보기">
+                                    <i class="fas fa-user-tie"></i> ${this.escapeHtml(t.name)}
+                                </span>
                                 <span class="badge badge-primary" style="font-size:0.75rem;margin-left:6px">${this.escapeHtml(t.loginId)}</span>
                             </h2>
                             <div>
