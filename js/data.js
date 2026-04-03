@@ -546,7 +546,7 @@ const DataStore = {
     },
 
     getPendingUsers() {
-        return this.getTeachers().filter(t => t.approved === false && t.role !== 'parent');
+        return this.getTeachers().filter(t => t.approved !== true && t.approved != null && t.role !== 'parent');
     },
 
     // === 업무 노트 (Tasks) - 선생/원장 할 일 관리 ===
