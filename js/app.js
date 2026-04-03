@@ -244,8 +244,15 @@ const App = {
         // 시간표 nav: 모든 역할 표시 (학생/학부모도 자신의 시간표 조회 가능)
         // (별도 숨김 처리 없음 — restrictedHiddenViews에 포함 안 함)
 
+        // 운영 카테고리 전체: 학생/학부모는 완전 숨김
+        const opsGroup = document.getElementById('navg-ops');
+        if (opsGroup) {
+            opsGroup.style.display = (role === 'student' || role === 'parent') ? 'none' : '';
+        }
+
         // Student/Parent role: hide management-heavy nav items
-        const restrictedHiddenViews = ['plans', 'progress', 'comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition', 'analytics'];
+        // plans, progress는 학생도 접근 가능 (본인 데이터만 조회/입력)
+        const restrictedHiddenViews = ['comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition', 'analytics'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
             if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
@@ -1269,18 +1276,27 @@ const App = {
     //  VIEW: PLANS LIST
     // =========================================
     renderPlans() {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const isStudent = role === 'student';
         const visibleIds = this.getVisibleStudentIds();
         const plans = DataStore.getPlans().filter(p => visibleIds.includes(p.studentId));
         const subjects = [...new Set(plans.map(p => p.subject))].sort();
         const students = this.getVisibleStudents();
 
+        const studentFilterHtml = isStudent ? '' : `
+            <select class="filter-select" id="filter-plan-student" onchange="App.filterPlans()">
+                <option value="">전체 학생</option>
+                ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)}</option>`).join('')}
+            </select>`;
+
+        const addBtnHtml = isStudent
+            ? `<button class="btn btn-primary" data-action="add-plan" data-student-id="${this.currentUser.studentId}"><i class="fas fa-plus"></i> 내 계획 추가</button>`
+            : '';
+
         const html = `
             <div class="toolbar">
                 <div class="toolbar-filters">
-                    <select class="filter-select" id="filter-plan-student" onchange="App.filterPlans()">
-                        <option value="">전체 학생</option>
-                        ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)}</option>`).join('')}
-                    </select>
+                    ${studentFilterHtml}
                     <select class="filter-select" id="filter-plan-subject" onchange="App.filterPlans()">
                         <option value="">전체 과목</option>
                         ${subjects.map(s => `<option value="${this.escapeHtml(s)}">${this.escapeHtml(s)}</option>`).join('')}
@@ -1292,6 +1308,7 @@ const App = {
                         <option value="paused">일시중지</option>
                     </select>
                 </div>
+                ${addBtnHtml}
             </div>
 
             <div id="plans-container">
@@ -1369,6 +1386,8 @@ const App = {
     //  VIEW: PROGRESS
     // =========================================
     renderProgress() {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const isStudent = role === 'student';
         const students = this.getVisibleStudents();
         const visibleIds = students.map(s => s.id);
         const allProgress = DataStore.getProgressEntries()
@@ -1376,25 +1395,39 @@ const App = {
             .sort((a, b) => new Date(b.date) - new Date(a.date))
             .slice(0, 30);
 
+        // 학생 본인이면 자신의 계획 목록 바로 로드
+        const myPlans = isStudent ? DataStore.getStudentPlans(this.currentUser.studentId).filter(p => p.status === 'active') : [];
+        const studentSelectHtml = isStudent
+            ? `<input type="hidden" id="qp-student" value="${this.currentUser.studentId}">
+               <div class="form-group"><label>학습 계획 <span class="required">*</span></label>
+               <select class="form-control" id="qp-plan" required>
+                   <option value="">계획 선택</option>
+                   ${myPlans.map(p => {
+                       const pct = p.totalUnits > 0 ? Math.round((p.completedUnits / p.totalUnits) * 100) : 0;
+                       return `<option value="${p.id}">${this.escapeHtml(p.subject)} - ${this.escapeHtml(p.textbook)} (${pct}%)</option>`;
+                   }).join('')}
+               </select></div>`
+            : `<div class="form-group">
+                   <label>학생 <span class="required">*</span></label>
+                   <select class="form-control" id="qp-student" required onchange="App.loadStudentPlansForQuickProgress()">
+                       <option value="">학생 선택</option>
+                       ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)} ${this.escapeHtml(s.className)})</option>`).join('')}
+                   </select>
+               </div>`;
+
         const html = `
             <div class="grid-2">
                 <div class="card">
-                    <div class="card-header"><h2><i class="fas fa-plus-circle"></i> 진도 빠른 입력</h2></div>
+                    <div class="card-header"><h2><i class="fas fa-plus-circle"></i> 진도 입력</h2></div>
                     <div class="card-body">
                         <form id="quick-progress-form" onsubmit="App.handleQuickProgress(event)">
-                            <div class="form-group">
-                                <label>학생 <span class="required">*</span></label>
-                                <select class="form-control" id="qp-student" required onchange="App.loadStudentPlansForQuickProgress()">
-                                    <option value="">학생 선택</option>
-                                    ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)} ${this.escapeHtml(s.className)})</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="form-group">
+                            ${studentSelectHtml}
+                            ${isStudent ? '' : `<div class="form-group">
                                 <label>학습 계획 <span class="required">*</span></label>
                                 <select class="form-control" id="qp-plan" required>
                                     <option value="">학생을 먼저 선택하세요</option>
                                 </select>
-                            </div>
+                            </div>`}
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>진행량 <span class="required">*</span></label>
