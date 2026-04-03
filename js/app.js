@@ -262,14 +262,18 @@ const App = {
             opsGroup.style.display = (role === 'student' || role === 'parent') ? 'none' : '';
         }
 
-        // Student/Parent role: hide management-heavy nav items
-        // plans, progress는 학생도 접근 가능 (본인 데이터만 조회/입력)
-        const restrictedHiddenViews = ['comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition', 'analytics'];
+        // 역할별 숨길 메뉴 목록
+        // 학생/학부모 공통 제한
+        const restrictedBoth = ['comments', 'teachers', 'messages', 'tasks', 'attendance', 'consultations', 'tuition', 'analytics', 'export'];
+        // 학부모 추가 제한 (학생은 입력 가능하지만 학부모는 열람만 — bulk-progress는 별도 처리)
+        const restrictedParentOnly = ['bulk-progress'];
         document.querySelectorAll('.nav-item').forEach(item => {
             const view = item.dataset.view;
-            if ((role === 'student' || role === 'parent') && restrictedHiddenViews.includes(view)) {
+            if ((role === 'student' || role === 'parent') && restrictedBoth.includes(view)) {
                 item.style.display = 'none';
-            } else if (view !== 'teachers' && view !== 'tasks' && view !== 'attendance' && view !== 'consultations' && view !== 'tuition' && view !== 'analytics') {
+            } else if (role === 'parent' && restrictedParentOnly.includes(view)) {
+                item.style.display = 'none';
+            } else if (!restrictedBoth.includes(view)) {
                 item.style.display = '';
             }
         });
@@ -599,6 +603,10 @@ const App = {
         if (!this.currentUser) return DataStore.getStudents();
         if (this.currentUser.role === 'director') return DataStore.getStudents();
         if (this.currentUser.role === 'student') {
+            const s = DataStore.getStudent(this.currentUser.studentId);
+            return s ? [s] : [];
+        }
+        if (this.currentUser.role === 'parent') {
             const s = DataStore.getStudent(this.currentUser.studentId);
             return s ? [s] : [];
         }
@@ -939,6 +947,7 @@ const App = {
             DataStore.getComments().filter(c => visibleIds.includes(c.studentId))
         );
         const isStudent = Permissions.isStudent();
+        const isParent = this.currentUser?.role === 'parent';
 
         let avgProgress = 0;
         if (activePlans.length > 0) {
@@ -961,14 +970,15 @@ const App = {
             .slice(0, 5);
 
         const userLabel = this.currentUser
-            ? (this.currentUser.role === 'director' ? '전체' : this.currentUser.role === 'student' ? '내' : `${this.currentUser.name} 담당`)
+            ? (this.currentUser.role === 'director' ? '전체' : this.currentUser.role === 'student' ? '내' : this.currentUser.role === 'parent' ? '자녀' : `${this.currentUser.name} 담당`)
             : '전체';
 
         const html = `
             ${this.currentUser && this.currentUser.role === 'teacher' ? `<div class="teacher-context-banner"><i class="fas fa-chalkboard-teacher"></i> <strong>${this.escapeHtml(this.currentUser.name)}</strong> 담당 학생 현황 (${students.length}명)</div>` : ''}
             ${isStudent ? `<div class="student-context-banner"><i class="fas fa-user-graduate"></i> <strong>${this.escapeHtml(this.currentUser.name)}</strong>님의 학습 현황</div>` : ''}
+            ${isParent ? `<div class="student-context-banner"><i class="fas fa-user-friends"></i> <strong>${this.escapeHtml(students[0]?.name || '')}</strong> 자녀의 학습 현황</div>` : ''}
             <div class="stats-grid">
-                ${!isStudent ? `<div class="stat-card">
+                ${(!isStudent && !isParent) ? `<div class="stat-card">
                     <div class="stat-icon blue"><i class="fas fa-user-graduate"></i></div>
                     <div class="stat-info"><h3>${stats.totalStudents}</h3><p>${userLabel} 학생</p></div>
                 </div>` : ''}
@@ -1141,8 +1151,8 @@ const App = {
     //  VIEW: STUDENTS LIST
     // =========================================
     renderStudents(searchQuery = '') {
-        // 학생 역할이면 본인 상세 페이지로 바로 이동
-        if (Permissions.isStudent() && this.currentUser && this.currentUser.studentId) {
+        // 학생/학부모 역할이면 본인(자녀) 상세 페이지로 바로 이동
+        if ((Permissions.isStudent() || this.currentUser?.role === 'parent') && this.currentUser && this.currentUser.studentId) {
             this.navigate('student-detail', { studentId: this.currentUser.studentId });
             return;
         }
@@ -1733,12 +1743,13 @@ const App = {
     renderPlans() {
         const role = this.currentUser ? this.currentUser.role : '';
         const isStudent = role === 'student';
+        const isParent = role === 'parent';
         const visibleIds = this.getVisibleStudentIds();
         const plans = DataStore.getPlans().filter(p => visibleIds.includes(p.studentId));
         const subjects = [...new Set(plans.map(p => p.subject))].sort();
         const students = this.getVisibleStudents();
 
-        const studentFilterHtml = isStudent ? '' : `
+        const studentFilterHtml = (isStudent || isParent) ? '' : `
             <select class="filter-select" id="filter-plan-student" onchange="App.filterPlans()">
                 <option value="">전체 학생</option>
                 ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)}</option>`).join('')}
@@ -1844,6 +1855,7 @@ const App = {
     renderProgress() {
         const role = this.currentUser ? this.currentUser.role : '';
         const isStudent = role === 'student';
+        const isParent = role === 'parent';
         const students = this.getVisibleStudents();
         const visibleIds = students.map(s => s.id);
         const allProgress = DataStore.getProgressEntries()
@@ -1851,10 +1863,11 @@ const App = {
             .sort((a, b) => new Date(b.date) - new Date(a.date))
             .slice(0, 30);
 
-        // 학생 본인이면 자신의 계획 목록 바로 로드
-        const myPlans = isStudent ? DataStore.getStudentPlans(this.currentUser.studentId).filter(p => p.status === 'active') : [];
+        // 학생/학부모는 자신(자녀) 계획 목록 바로 로드
+        const myStudentId = (isStudent || isParent) ? this.currentUser.studentId : null;
+        const myPlans = myStudentId ? DataStore.getStudentPlans(myStudentId).filter(p => p.status === 'active') : [];
         const studentSelectHtml = isStudent
-            ? `<input type="hidden" id="qp-student" value="${this.currentUser.studentId}">
+            ? `<input type="hidden" id="qp-student" value="${myStudentId}">
                <div class="form-group"><label>학습 계획 <span class="required">*</span></label>
                <select class="form-control" id="qp-plan" required>
                    <option value="">계획 선택</option>
@@ -1873,7 +1886,7 @@ const App = {
 
         const html = `
             <div class="grid-2">
-                <div class="card">
+                ${isParent ? '' : `<div class="card">
                     <div class="card-header"><h2><i class="fas fa-plus-circle"></i> 진도 입력</h2></div>
                     <div class="card-body">
                         <form id="quick-progress-form" onsubmit="App.handleQuickProgress(event)">
@@ -1901,7 +1914,7 @@ const App = {
                             <button type="submit" class="btn btn-primary" style="width:100%"><i class="fas fa-save"></i> 진도 기록</button>
                         </form>
                     </div>
-                </div>
+                </div>`}
 
                 <div class="card">
                     <div class="card-header"><h2><i class="fas fa-history"></i> 최근 진도 기록</h2></div>
@@ -2212,6 +2225,10 @@ const App = {
     _gradesViewMode: 'table', // 'table' | 'pivot' | 'chart'
 
     renderGrades() {
+        const role = this.currentUser ? this.currentUser.role : '';
+        const isStudent = role === 'student';
+        const isParent = role === 'parent';
+        const canEdit = role === 'director' || role === 'teacher';
         const students = this.getVisibleStudents();
         const visibleIds = students.map(s => s.id);
         const allGrades = DataStore.getGrades().filter(g => visibleIds.includes(g.studentId));
@@ -2223,10 +2240,10 @@ const App = {
         const html = `
             <div class="toolbar">
                 <div class="toolbar-filters">
-                    <select class="filter-select" id="filter-grade-student" onchange="App.filterGrades()">
+                    ${(isStudent || isParent) ? '' : `<select class="filter-select" id="filter-grade-student" onchange="App.filterGrades()">
                         <option value="">전체 학생</option>
                         ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)}</option>`).join('')}
-                    </select>
+                    </select>`}
                     <select class="filter-select" id="filter-grade-semester" onchange="App.filterGrades()">
                         <option value="">전체 학기</option>
                         ${semesters.map(s => `<option value="${this.escapeHtml(s)}">${this.escapeHtml(s)}</option>`).join('')}
@@ -2240,7 +2257,7 @@ const App = {
                         ${subjects.map(s => `<option value="${this.escapeHtml(s)}">${this.escapeHtml(s)}</option>`).join('')}
                     </select>
                 </div>
-                <button class="btn btn-primary" data-action="add-grade"><i class="fas fa-plus"></i> 시험 성적 입력</button>
+                ${canEdit ? `<button class="btn btn-primary" data-action="add-grade"><i class="fas fa-plus"></i> 시험 성적 입력</button>` : ''}
             </div>
 
             <div class="grades-view-tabs">
@@ -2284,6 +2301,8 @@ const App = {
 
     // --- Table View ---
     renderGradesTable(grades, subjectFilter) {
+        const _role = this.currentUser ? this.currentUser.role : '';
+        const _canEdit = _role === 'director' || _role === 'teacher';
         // Flatten to rows
         let rows = [];
         grades.forEach(g => {
@@ -2341,7 +2360,7 @@ const App = {
                     <th class="sortable" data-action="sort-grades" data-col="percentile">백분위 ${sortIcon('percentile')}</th>` : ''}
                     <th class="sortable" data-action="sort-grades" data-col="totalAvg">전체평균 ${sortIcon('totalAvg')}</th>
                     <th>전체석차</th>
-                    <th>관리</th>
+                    ${_canEdit ? '<th>관리</th>' : ''}
                 </tr></thead>
                 <tbody>${rows.map(r => {
                     const examLabel = r.isMock ? (r.examName || '모의고사') : `${r.semester} ${r.examType}`;
@@ -2360,10 +2379,10 @@ const App = {
                     <td style="color:var(--gray-600);font-size:0.85rem">${r.isMock && r.percentile ? r.percentile : '-'}</td>` : ''}
                     <td><strong>${r.totalAvg}</strong></td>
                     <td style="color:var(--gray-500);font-size:0.82rem">${this.escapeHtml(r.totalRank)}</td>
-                    <td>
+                    ${_canEdit ? `<td>
                         <button class="btn-icon" data-action="edit-grade" data-grade-id="${r.gradeId}" title="수정"><i class="fas fa-edit"></i></button>
                         <button class="btn-icon" data-action="delete-grade" data-grade-id="${r.gradeId}" title="삭제" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
-                    </td>
+                    </td>` : ''}
                 </tr>`}).join('')}</tbody>
             </table>
         </div></div></div>`;
@@ -4458,6 +4477,7 @@ const App = {
     renderExam() {
         const role = this.currentUser ? this.currentUser.role : '';
         const isStudent = role === 'student';
+        const isParent = role === 'parent';
         const today = this.getLocalDateStr();
         const students = this.getVisibleStudents();
 
@@ -4475,8 +4495,8 @@ const App = {
             return `<span class="exam-dday normal">D-${d}</span>`;
         };
 
-        if (isStudent) {
-            // ── 학생 뷰 ──
+        if (isStudent || isParent) {
+            // ── 학생/학부모 뷰 ──
             const studentId = this.currentUser.studentId;
             const plans = DataStore.getExamPlansForStudent(studentId);
             const upcoming = plans.filter(ep => !ep.examDate || ep.examDate >= today);
@@ -4698,10 +4718,11 @@ const App = {
     renderHomework() {
         const role = this.currentUser ? this.currentUser.role : '';
         const isStudent = role === 'student';
+        const isParent = role === 'parent';
         const today = this.getLocalDateStr();
 
-        if (isStudent) {
-            // 학생 뷰: 내 숙제 목록
+        if (isStudent || isParent) {
+            // 학생/학부모 뷰: 자녀 숙제 목록 (학부모는 체크 버튼 숨김)
             const studentId = this.currentUser.studentId;
             const allHw = DataStore.getHomeworkForStudent(studentId);
             const pending = allHw.filter(h => !DataStore.isHomeworkCompletedBy(h, studentId));
@@ -4728,11 +4749,11 @@ const App = {
                             <span style="color:var(--gray-400);font-size:0.75rem"><i class="fas fa-user-tie"></i> ${this.escapeHtml(h.assignedBy || '')}</span>
                         </div>
                     </div>
-                    <button class="btn btn-sm ${completed ? 'btn-outline' : 'btn-success'}"
+                    ${!isParent ? `<button class="btn btn-sm ${completed ? 'btn-outline' : 'btn-success'}"
                         data-action="${completed ? 'hw-incomplete' : 'hw-complete'}"
                         data-hw-id="${h.id}" data-student-id="${studentId}">
                         <i class="fas ${completed ? 'fa-undo' : 'fa-check'}"></i> ${completed ? '취소' : '완료'}
-                    </button>
+                    </button>` : ''}
                 </div>`;
             };
 
