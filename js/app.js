@@ -775,6 +775,12 @@ const App = {
                 </div>
             </div>
 
+            ${!isStudent ? `
+            <div class="card" style="margin-bottom:20px">
+                <div class="card-header"><h2><i class="fas fa-fire" style="color:#EF4444"></i> 이번 주 학습량 비교</h2></div>
+                <div class="card-body"><div class="chart-container" style="height:${Math.min(students.length, 10) * 36 + 40}px"><canvas id="chart-weekly-compare"></canvas></div></div>
+            </div>` : ''}
+
             <div class="card" style="margin-top:20px">
                 <div class="card-header">
                     <h2><i class="fas fa-users"></i> 학생별 진도 요약</h2>
@@ -816,6 +822,7 @@ const App = {
             Charts.createOverviewDoughnut('chart-overview', stats);
             Charts.createProgressDistribution('chart-distribution', students);
             Charts.createAllStudentsSubject('chart-subjects');
+            if (!isStudent) Charts.createWeeklyCompare('chart-weekly-compare', students);
         }, 50);
     },
 
@@ -1041,17 +1048,39 @@ const App = {
                 </div>
             </div>
 
-            ${Object.keys(subjectProgress).length > 0 ? `
-            <div class="grid-2" style="margin-bottom:20px">
-                <div class="card">
-                    <div class="card-header"><h2><i class="fas fa-chart-bar"></i> 과목별 진행률</h2></div>
-                    <div class="card-body"><div class="chart-container"><canvas id="chart-student-bar"></canvas></div></div>
+            <!-- 진도 분석 섹션 -->
+            <div class="card" style="margin-bottom:20px" id="progress-analysis-card">
+                <div class="card-header">
+                    <h2><i class="fas fa-chart-area" style="color:var(--primary)"></i> 진도 분석</h2>
+                    <div class="progress-tab-btns">
+                        <button class="btn btn-sm btn-outline active" id="ptab-heatmap" onclick="App.switchProgressTab('heatmap', '${studentId}')"><i class="fas fa-th"></i> 캘린더</button>
+                        <button class="btn btn-sm btn-outline" id="ptab-line" onclick="App.switchProgressTab('line', '${studentId}')"><i class="fas fa-chart-line"></i> 누적 추이</button>
+                        <button class="btn btn-sm btn-outline" id="ptab-bar" onclick="App.switchProgressTab('bar', '${studentId}')"><i class="fas fa-chart-bar"></i> 과목별</button>
+                    </div>
                 </div>
-                <div class="card">
-                    <div class="card-header"><h2><i class="fas fa-spider"></i> 과목 균형</h2></div>
-                    <div class="card-body"><div class="chart-container"><canvas id="chart-student-radar"></canvas></div></div>
+                <div class="card-body" id="progress-tab-content">
+                    <div id="ptab-heatmap-panel">
+                        <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:10px">최근 16주 학습 활동 (색이 진할수록 많이 공부)</p>
+                        <div id="heatmap-container"></div>
+                    </div>
+                    <div id="ptab-line-panel" style="display:none">
+                        <div class="form-group" style="max-width:260px;margin-bottom:12px">
+                            <label style="font-size:0.82rem">계획 선택</label>
+                            <select class="form-control" id="line-plan-select" onchange="App.renderLinePlanChart('${studentId}')">
+                                <option value="">전체 합산</option>
+                                ${activePlans.filter(p => p.trackingMode !== 'checklist').map(p => `<option value="${p.id}">${this.escapeHtml(p.subject)} - ${this.escapeHtml(p.textbook)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="chart-container" style="height:260px"><canvas id="chart-cumulative-line"></canvas></div>
+                    </div>
+                    <div id="ptab-bar-panel" style="display:none">
+                        <div class="grid-2">
+                            <div><div class="chart-container" style="height:220px"><canvas id="chart-student-bar"></canvas></div></div>
+                            <div><div class="chart-container" style="height:220px"><canvas id="chart-student-radar"></canvas></div></div>
+                        </div>
+                    </div>
                 </div>
-            </div>` : ''}
+            </div>
 
             <div class="card" style="margin-bottom:20px">
                 <div class="card-header">
@@ -1205,18 +1234,55 @@ const App = {
 
         document.getElementById('content-area').innerHTML = html;
 
-        if (Object.keys(subjectProgress).length > 0) {
-            setTimeout(() => {
+        // 진도 분석: 히트맵 기본 렌더링
+        setTimeout(() => {
+            const allProgress = DataStore.getProgressEntries()
+                .filter(p => p.studentId === studentId && p.planId !== 'self_journal' && p.planId !== 'self_goal');
+            Charts.createHeatmap('heatmap-container', allProgress);
+            if (Object.keys(subjectProgress).length > 0) {
                 Charts.createSubjectBar('chart-student-bar', subjectProgress);
                 Charts.createRadar('chart-student-radar', subjectProgress);
-            }, 50);
-        }
+            }
+        }, 50);
 
         // 성적 추이 차트
         if (this._gradeDetailView === 'trend' && studentGrades.length > 1) {
             setTimeout(() => {
                 Charts.createGradeTrend('chart-grade-trend-detail', studentGrades);
             }, 50);
+        }
+    },
+
+    switchProgressTab(tab, studentId) {
+        ['heatmap', 'line', 'bar'].forEach(t => {
+            document.getElementById(`ptab-${t}-panel`).style.display = t === tab ? '' : 'none';
+            document.getElementById(`ptab-${t}`)?.classList.toggle('active', t === tab);
+        });
+        if (tab === 'heatmap') {
+            const allProgress = DataStore.getProgressEntries()
+                .filter(p => p.studentId === studentId && p.planId !== 'self_journal' && p.planId !== 'self_goal');
+            Charts.createHeatmap('heatmap-container', allProgress);
+        } else if (tab === 'line') {
+            this.renderLinePlanChart(studentId);
+        } else if (tab === 'bar') {
+            const subjectProgress = DataStore.getStudentSubjectProgress(studentId);
+            Charts.createSubjectBar('chart-student-bar', subjectProgress);
+            Charts.createRadar('chart-student-radar', subjectProgress);
+        }
+    },
+
+    renderLinePlanChart(studentId) {
+        const planId = document.getElementById('line-plan-select')?.value;
+        const allProgress = DataStore.getProgressEntries()
+            .filter(p => p.studentId === studentId && p.planId !== 'self_journal' && p.planId !== 'self_goal');
+
+        if (planId) {
+            const plan = DataStore.getPlan(planId);
+            const entries = allProgress.filter(p => p.planId === planId);
+            Charts.createCumulativeLine('chart-cumulative-line', entries, plan);
+        } else {
+            // 전체 합산 (계획 없이)
+            Charts.createCumulativeLine('chart-cumulative-line', allProgress, null);
         }
     },
 

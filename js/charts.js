@@ -375,5 +375,191 @@ const Charts = {
                 }
             }
         });
+    },
+
+    // 누적 진행량 라인 차트 (목표선 포함) - 학생 진도 추이용
+    createCumulativeLine(canvasId, progressEntries, plan) {
+        this.destroy(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+
+        const sorted = [...progressEntries].sort((a, b) => a.date.localeCompare(b.date));
+        let cumulative = 0;
+        const actualData = sorted.map(e => {
+            cumulative += (e.amount || 0);
+            return { x: e.date, y: Math.min(cumulative, plan ? plan.totalUnits : cumulative) };
+        });
+
+        const datasets = [{
+            label: '실제 누적',
+            data: actualData,
+            borderColor: '#4F46E5',
+            backgroundColor: 'rgba(79,70,229,0.08)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#4F46E5'
+        }];
+
+        if (plan && plan.startDate && plan.endDate && plan.totalUnits > 0) {
+            datasets.push({
+                label: '목표선',
+                data: [{ x: plan.startDate, y: 0 }, { x: plan.endDate, y: plan.totalUnits }],
+                borderColor: '#EF4444',
+                borderDash: [6, 4],
+                pointRadius: 0,
+                fill: false,
+                tension: 0
+            });
+            // 예상 완료일 계산
+            if (actualData.length >= 2) {
+                const first = actualData[0];
+                const last = actualData[actualData.length - 1];
+                const days = (new Date(last.x) - new Date(first.x)) / 86400000;
+                const rate = days > 0 ? (last.y - first.y) / days : 0;
+                const remaining = plan.totalUnits - last.y;
+                if (rate > 0) {
+                    const estDays = Math.ceil(remaining / rate);
+                    const estDate = new Date(new Date(last.x).getTime() + estDays * 86400000);
+                    const estStr = estDate.toISOString().slice(0, 10);
+                    datasets.push({
+                        label: '예상 완료',
+                        data: [{ x: last.x, y: last.y }, { x: estStr, y: plan.totalUnits }],
+                        borderColor: '#10B981',
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0
+                    });
+                }
+            }
+        }
+
+        this.instances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'category', grid: { color: '#F3F4F6' }, ticks: { font: { family: "'Noto Sans KR', sans-serif", size: 11 }, maxRotation: 30 } },
+                    y: { beginAtZero: true, grid: { color: '#F3F4F6' }, ticks: { font: { family: "'Noto Sans KR', sans-serif", size: 11 } }, title: { display: true, text: plan ? (plan.unitLabel || '진행량') : '진행량', font: { size: 11 } } }
+                },
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: "'Noto Sans KR', sans-serif", size: 11 } } },
+                    tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${c.raw.y}` } }
+                }
+            }
+        });
+    },
+
+    // 히트맵 (캘린더 스타일) - DOM 직접 렌더링
+    createHeatmap(containerId, progressEntries, weeks = 16) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        // 날짜별 합산
+        const dayMap = {};
+        progressEntries.forEach(e => {
+            if (!e.date) return;
+            dayMap[e.date] = (dayMap[e.date] || 0) + (e.amount || 0);
+        });
+
+        const max = Math.max(...Object.values(dayMap), 1);
+        const today = new Date();
+        const startDate = new Date(today);
+        startDate.setDate(startDate.getDate() - weeks * 7 + 1);
+
+        // 요일 레이블
+        const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+
+        let html = `<div class="heatmap-wrap">
+            <div class="heatmap-days">
+                ${dayLabels.map(d => `<div>${d}</div>`).join('')}
+            </div>
+            <div class="heatmap-grid">`;
+
+        const cur = new Date(startDate);
+        // 첫 날 앞의 빈 칸
+        for (let i = 0; i < cur.getDay(); i++) {
+            html += `<div class="heatmap-cell heatmap-empty"></div>`;
+        }
+
+        while (cur <= today) {
+            const dateStr = cur.toISOString().slice(0, 10);
+            const val = dayMap[dateStr] || 0;
+            const intensity = val === 0 ? 0 : Math.ceil((val / max) * 4);
+            const title = val > 0 ? `${dateStr}: ${val}단위` : dateStr;
+            html += `<div class="heatmap-cell heatmap-level-${intensity}" title="${title}" data-date="${dateStr}" data-val="${val}"></div>`;
+            cur.setDate(cur.getDate() + 1);
+        }
+
+        html += `</div>
+            <div class="heatmap-legend">
+                <span style="font-size:0.75rem;color:var(--gray-400)">적음</span>
+                ${[0,1,2,3,4].map(l => `<div class="heatmap-cell heatmap-level-${l}" style="cursor:default"></div>`).join('')}
+                <span style="font-size:0.75rem;color:var(--gray-400)">많음</span>
+            </div>
+        </div>`;
+
+        container.innerHTML = html;
+    },
+
+    // 주간 학습량 비교 바 차트 (선생/원장용)
+    createWeeklyCompare(canvasId, students) {
+        this.destroy(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+
+        const now = new Date();
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay());
+        const weekStartStr = weekStart.toISOString().slice(0, 10);
+        const todayStr = now.toISOString().slice(0, 10);
+
+        const labels = [];
+        const data = [];
+        students.slice(0, 15).forEach(s => {
+            const entries = DataStore.getProgressEntries()
+                .filter(p => p.studentId === s.id && p.date >= weekStartStr && p.date <= todayStr && p.planId !== 'self_journal' && p.planId !== 'self_goal');
+            const total = entries.reduce((sum, e) => sum + (e.amount || 0), 0);
+            if (total > 0) { labels.push(s.name); data.push(total); }
+        });
+
+        if (labels.length === 0) {
+            container && (container.innerHTML = '<div style="padding:16px;color:var(--gray-400);text-align:center;font-size:0.88rem">이번 주 학습 기록이 없습니다</div>');
+            return;
+        }
+
+        // 학습량 내림차순 정렬
+        const combined = labels.map((l, i) => ({ l, d: data[i] })).sort((a, b) => b.d - a.d);
+
+        this.instances[canvasId] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: combined.map(c => c.l),
+                datasets: [{
+                    label: '이번 주 학습량',
+                    data: combined.map(c => c.d),
+                    backgroundColor: combined.map((_, i) => this.colors[i % this.colors.length] + 'CC'),
+                    borderColor: combined.map((_, i) => this.colors[i % this.colors.length]),
+                    borderWidth: 2,
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                scales: {
+                    x: { beginAtZero: true, grid: { color: '#F3F4F6' }, ticks: { font: { family: "'Noto Sans KR', sans-serif", size: 11 } } },
+                    y: { grid: { display: false }, ticks: { font: { family: "'Noto Sans KR', sans-serif", size: 11 } } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: c => ` ${c.formattedValue}단위` } }
+                }
+            }
+        });
     }
 };
