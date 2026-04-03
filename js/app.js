@@ -531,7 +531,7 @@ const App = {
             document.getElementById(targetGroup)?.classList.add('open');
         }
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', 'bulk-progress': '일괄 진도 입력', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', 'bulk-progress': '일괄 진도 입력', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '학습 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -5708,7 +5708,7 @@ const App = {
             periodTitle = `${y}년 ${m}월`;
         }
 
-        const msgContent = `📊 [${periodTitle} ${periodLabel} 학습 리포트]\n${student.name} 학생의 리포트가 공유되었습니다.\n앱에서 [월간 리포트] 메뉴를 확인해주세요.`;
+        const msgContent = `📊 [${periodTitle} ${periodLabel} 학습 리포트]\n${student.name} 학생의 리포트가 공유되었습니다.\n앱에서 [학습 리포트] 메뉴를 확인해주세요.`;
         const author = this.currentUser ? this.currentUser.name : '선생님';
         const authorRole = this.currentUser ? this.currentUser.role : 'teacher';
 
