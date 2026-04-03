@@ -241,6 +241,12 @@ const App = {
             analyticsNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
         }
 
+        // 일괄 진도 입력 nav: 원장/선생만 표시
+        const bulkNav = document.getElementById('nav-bulk-progress');
+        if (bulkNav) {
+            bulkNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
+        }
+
         // 시간표 nav: 모든 역할 표시 (학생/학부모도 자신의 시간표 조회 가능)
         // (별도 숨김 처리 없음 — restrictedHiddenViews에 포함 안 함)
 
@@ -506,7 +512,7 @@ const App = {
         const viewGroupMap = {
             dashboard: 'navg-student', students: 'navg-student', 'student-detail': 'navg-student',
             attendance: 'navg-student', consultations: 'navg-student', teachers: 'navg-student', analytics: 'navg-student',
-            plans: 'navg-study', progress: 'navg-study', homework: 'navg-study',
+            plans: 'navg-study', progress: 'navg-study', 'bulk-progress': 'navg-study', homework: 'navg-study',
             exam: 'navg-study', comments: 'navg-study', report: 'navg-study', schedule: 'navg-study',
             grades: 'navg-ops', board: 'navg-ops', notifications: 'navg-ops',
             messages: 'navg-ops', tasks: 'navg-ops', tuition: 'navg-ops'
@@ -516,7 +522,7 @@ const App = {
             document.getElementById(targetGroup)?.classList.add('open');
         }
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', 'bulk-progress': '일괄 진도 입력', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '월간 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -545,6 +551,7 @@ const App = {
             'analytics':      [T.PLANS, T.ATTENDANCE, T.GRADES, T.HOMEWORK],
             'parent-home':    [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.COMMENTS, T.GRADES],
             'schedule':       [T.SCHEDULES],
+            'bulk-progress':  [T.PLANS, T.PROGRESS],
         };
 
         const needed = viewTables[view] || [];
@@ -582,6 +589,7 @@ const App = {
             case 'analytics': this.renderAnalytics(); break;
             case 'parent-home': this.renderParentHome(); break;
             case 'schedule': this.renderSchedule(); break;
+            case 'bulk-progress': this.renderBulkProgress(); break;
         }
     },
 
@@ -657,6 +665,67 @@ const App = {
                     <div class="stat-info"><h3>${stats.totalComments}</h3><p>전체 코멘트</p></div>
                 </div>
             </div>
+
+            <!-- 오늘의 학습 빠른 입력 위젯 -->
+            ${(isStudent || this.currentUser?.role === 'teacher' || this.currentUser?.role === 'director') ? (() => {
+                const role = this.currentUser?.role;
+                const myPlans = isStudent
+                    ? DataStore.getStudentPlans(this.currentUser.studentId).filter(p => p.status === 'active' && p.trackingMode !== 'checklist')
+                    : [];
+                const studentSelectHtml = isStudent
+                    ? `<input type="hidden" id="dqp-student" value="${this.currentUser.studentId}">
+                       <div class="form-group">
+                         <label>학습 계획</label>
+                         <select class="form-control" id="dqp-plan" required>
+                           <option value="">계획 선택</option>
+                           ${myPlans.map(p => {
+                               const pct = p.totalUnits > 0 ? Math.round((p.completedUnits / p.totalUnits) * 100) : 0;
+                               return `<option value="${p.id}">${this.escapeHtml(p.subject)} - ${this.escapeHtml(p.textbook)} (${pct}%)</option>`;
+                           }).join('')}
+                         </select>
+                       </div>`
+                    : `<div class="form-group">
+                         <label>학생</label>
+                         <select class="form-control" id="dqp-student" required onchange="App.loadDashboardStudentPlans()">
+                           <option value="">학생 선택</option>
+                           ${students.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
+                         </select>
+                       </div>
+                       <div class="form-group">
+                         <label>학습 계획</label>
+                         <select class="form-control" id="dqp-plan" required>
+                           <option value="">학생을 먼저 선택하세요</option>
+                         </select>
+                       </div>`;
+                return `<div class="card" style="margin-bottom:20px">
+                    <div class="card-header">
+                        <h2><i class="fas fa-bolt" style="color:var(--warning)"></i> 오늘의 학습 빠른 입력</h2>
+                        ${(role === 'teacher' || role === 'director') ? `<button class="btn btn-sm btn-outline" data-action="go-bulk-progress"><i class="fas fa-table"></i> 일괄 입력</button>` : ''}
+                    </div>
+                    <div class="card-body">
+                        <form id="dashboard-quick-form" onsubmit="App.handleDashboardQuickProgress(event)">
+                            <div class="form-row" style="align-items:flex-end;gap:12px;flex-wrap:wrap">
+                                ${studentSelectHtml}
+                                <div class="form-group">
+                                    <label>진행량</label>
+                                    <input type="number" class="form-control" id="dqp-amount" min="1" required placeholder="숫자" style="width:90px">
+                                </div>
+                                <div class="form-group">
+                                    <label>날짜</label>
+                                    <input type="date" class="form-control" id="dqp-date" required value="${new Date().toISOString().split('T')[0]}" style="width:150px">
+                                </div>
+                                <div class="form-group" style="flex:1;min-width:120px">
+                                    <label>메모</label>
+                                    <input type="text" class="form-control" id="dqp-note" placeholder="오늘 학습 내용">
+                                </div>
+                                <div class="form-group" style="margin-bottom:16px">
+                                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> 저장</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>`;
+            })() : ''}
 
             <div class="grid-2">
                 <div class="card">
@@ -1503,6 +1572,161 @@ const App = {
         }).catch(err => {
             this.toast('진도 저장 실패: ' + err.message, 'error');
         });
+    },
+
+    // =========================================
+    //  VIEW: BULK PROGRESS (일괄 진도 입력)
+    // =========================================
+    renderBulkProgress() {
+        const role = this.currentUser?.role;
+        if (role !== 'teacher' && role !== 'director') {
+            document.getElementById('content-area').innerHTML = '<div class="empty-state"><i class="fas fa-lock"></i><h3>접근 권한이 없습니다</h3></div>';
+            return;
+        }
+        const subjects = DataStore.getUniqueSubjects();
+        const today = new Date().toISOString().split('T')[0];
+        const html = `
+            <div class="card" style="margin-bottom:16px">
+                <div class="card-header"><h2><i class="fas fa-sliders-h"></i> 수업 설정</h2></div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>과목 선택 <span class="required">*</span></label>
+                            <select class="form-control" id="bulk-subject" onchange="App.loadBulkProgressTable()">
+                                <option value="">과목을 선택하세요</option>
+                                ${subjects.map(s => `<option value="${this.escapeHtml(s)}">${this.escapeHtml(s)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>수업 날짜 <span class="required">*</span></label>
+                            <input type="date" class="form-control" id="bulk-date" value="${today}" style="max-width:180px">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="bulk-table-container"></div>
+            <div id="bulk-save-row" style="display:none;margin-top:12px;text-align:right">
+                <button class="btn btn-primary" id="bulk-save-btn" onclick="App.handleBulkProgressSave()">
+                    <i class="fas fa-save"></i> 전체 저장
+                </button>
+            </div>`;
+        document.getElementById('content-area').innerHTML = html;
+    },
+
+    loadBulkProgressTable() {
+        const subject = document.getElementById('bulk-subject').value;
+        const container = document.getElementById('bulk-table-container');
+        const saveRow = document.getElementById('bulk-save-row');
+        if (!subject) { container.innerHTML = ''; saveRow.style.display = 'none'; return; }
+
+        const students = this.getVisibleStudents();
+        const rows = [];
+        students.forEach(s => {
+            DataStore.getStudentPlans(s.id)
+                .filter(p => p.status === 'active' && p.subject === subject && p.trackingMode !== 'checklist')
+                .forEach(plan => {
+                    const pct = plan.totalUnits > 0 ? Math.round((plan.completedUnits / plan.totalUnits) * 100) : 0;
+                    rows.push({ student: s, plan, pct });
+                });
+        });
+
+        if (rows.length === 0) {
+            container.innerHTML = `<div class="card"><div class="empty-state"><i class="fas fa-search"></i><h3>${this.escapeHtml(subject)} 수업 중인 학생이 없습니다</h3></div></div>`;
+            saveRow.style.display = 'none';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-users"></i> ${this.escapeHtml(subject)} 수강 학생 (${rows.length}명)</h2></div>
+                <div class="card-body no-padding">
+                    <div class="table-wrapper">
+                        <table id="bulk-progress-table">
+                            <thead><tr><th>학생</th><th>교재</th><th>현재 진도</th><th>오늘 진행량</th><th>메모</th><th style="text-align:center">건너뜀</th></tr></thead>
+                            <tbody>
+                                ${rows.map((r, idx) => `
+                                <tr data-plan-id="${r.plan.id}" data-student-id="${r.student.id}">
+                                    <td><strong>${this.escapeHtml(r.student.name)}</strong><br><small style="color:var(--gray-400)">${this.escapeHtml(r.student.grade)}</small></td>
+                                    <td>${this.escapeHtml(r.plan.textbook)}</td>
+                                    <td>
+                                        <div class="progress-bar-container" style="width:80px;display:inline-block;vertical-align:middle;margin-right:6px">
+                                            <div class="progress-bar ${this.getProgressColor(r.pct)}" style="width:${r.pct}%"></div>
+                                        </div>
+                                        <span style="font-size:0.82rem">${r.pct}%</span>
+                                    </td>
+                                    <td><input type="number" class="form-control bulk-amount" min="0" placeholder="0" style="width:80px" data-idx="${idx}"></td>
+                                    <td><input type="text" class="form-control bulk-note" placeholder="메모" data-idx="${idx}"></td>
+                                    <td style="text-align:center"><input type="checkbox" class="bulk-skip" title="건너뜀" data-idx="${idx}"></td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        saveRow.style.display = 'block';
+    },
+
+    async handleBulkProgressSave() {
+        const date = document.getElementById('bulk-date').value;
+        if (!date) { this.toast('날짜를 선택하세요.', 'error'); return; }
+
+        const rows = document.querySelectorAll('#bulk-progress-table tbody tr');
+        const entries = [];
+        rows.forEach(row => {
+            if (row.querySelector('.bulk-skip').checked) return;
+            const amount = parseInt(row.querySelector('.bulk-amount').value);
+            if (!amount || amount <= 0) return;
+            entries.push({
+                studentId: row.dataset.studentId,
+                planId:    row.dataset.planId,
+                amount,
+                date,
+                note: row.querySelector('.bulk-note').value.trim()
+            });
+        });
+
+        if (entries.length === 0) { this.toast('저장할 진도 데이터가 없습니다.', 'error'); return; }
+
+        const btn = document.getElementById('bulk-save-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 저장 중...'; }
+
+        try {
+            for (const entry of entries) {
+                await DataStore.addProgressEntry(entry);
+            }
+            this.toast(`${entries.length}건의 진도가 저장되었습니다.`, 'success');
+            this.loadBulkProgressTable();
+        } catch(err) {
+            this.toast('저장 실패: ' + err.message, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> 전체 저장'; }
+        }
+    },
+
+    handleDashboardQuickProgress(e) {
+        e.preventDefault();
+        const studentId = document.getElementById('dqp-student').value;
+        const planId    = document.getElementById('dqp-plan').value;
+        const amount    = parseInt(document.getElementById('dqp-amount').value);
+        const date      = document.getElementById('dqp-date').value;
+        const note      = document.getElementById('dqp-note').value;
+        if (!studentId || !planId || !amount || !date) { this.toast('학생, 계획, 진행량, 날짜를 모두 입력하세요.', 'error'); return; }
+        DataStore.addProgressEntry({ studentId, planId, amount, date, note }).then(() => {
+            this.toast('진도가 기록되었습니다!', 'success');
+            this.renderDashboard();
+        }).catch(err => this.toast('저장 실패: ' + err.message, 'error'));
+    },
+
+    loadDashboardStudentPlans() {
+        const sid = document.getElementById('dqp-student').value;
+        const sel = document.getElementById('dqp-plan');
+        if (!sel) return;
+        if (!sid) { sel.innerHTML = '<option value="">학생을 먼저 선택하세요</option>'; return; }
+        const plans = DataStore.getStudentPlans(sid).filter(p => p.status === 'active' && p.trackingMode !== 'checklist');
+        sel.innerHTML = '<option value="">계획 선택</option>' + plans.map(p => {
+            const pct = p.totalUnits > 0 ? Math.round((p.completedUnits / p.totalUnits) * 100) : 0;
+            return `<option value="${p.id}">${this.escapeHtml(p.subject)} - ${this.escapeHtml(p.textbook)} (${pct}%)</option>`;
+        }).join('');
     },
 
     // =========================================
@@ -2655,19 +2879,42 @@ const App = {
 
         // Checklist item toggle
         if (e.target.tagName === 'INPUT' && e.target.dataset.action === 'toggle-checklist') {
-            const planId = e.target.dataset.planId;
-            const ci = parseInt(e.target.dataset.ci);
+            const checkbox = e.target;
+            const planId = checkbox.dataset.planId;
+            const ci = parseInt(checkbox.dataset.ci);
             const plan = DataStore.getPlan(planId);
-            if (plan && plan.checklistItems) {
-                const updatedItems = plan.checklistItems.map((item, i) =>
-                    i === ci ? { ...item, completed: e.target.checked } : { ...item }
-                );
-                const completed = updatedItems.filter(i => i.completed).length;
-                try {
-                    await DataStore.updatePlan(planId, { checklistItems: updatedItems, completedUnits: completed });
-                    if (this.currentView === 'student-detail') this.renderStudentDetail(this.currentStudentId);
-                    else this.navigate(this.currentView);
-                } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
+            if (!plan || !plan.checklistItems) return;
+
+            checkbox.disabled = true;
+            const updatedItems = plan.checklistItems.map((item, i) =>
+                i === ci ? { ...item, completed: checkbox.checked } : { ...item }
+            );
+            const completedUnits = updatedItems.filter(i => i.completed).length;
+
+            // 낙관적 UI — label 즉시 갱신
+            const label = checkbox.closest('.checklist-item');
+            if (label) label.classList.toggle('completed', checkbox.checked);
+
+            // 진행률 바 즉시 갱신
+            const planCard = checkbox.closest('.plan-card, .student-plan-card');
+            if (planCard && plan.totalUnits > 0) {
+                const pct = Math.round((completedUnits / plan.totalUnits) * 100);
+                const bar = planCard.querySelector('.progress-bar');
+                const spans = planCard.querySelectorAll('.progress-label span');
+                if (bar) bar.style.width = pct + '%';
+                if (spans[0]) spans[0].textContent = `${completedUnits} / ${plan.totalUnits} ${plan.unitLabel || ''}`;
+                if (spans[1]) spans[1].textContent = pct + '%';
+            }
+
+            try {
+                await DataStore.updatePlan(planId, { checklistItems: updatedItems, completedUnits });
+            } catch(err) {
+                // 롤백
+                checkbox.checked = !checkbox.checked;
+                if (label) label.classList.toggle('completed', checkbox.checked);
+                this.toast('저장 실패: ' + err.message, 'error');
+            } finally {
+                checkbox.disabled = false;
             }
             return;
         }
@@ -3148,6 +3395,10 @@ const App = {
 
             case 'go-notifications':
                 this.navigate('notifications');
+                break;
+
+            case 'go-bulk-progress':
+                this.navigate('bulk-progress');
                 break;
 
             // 성적 추이 탭 전환
