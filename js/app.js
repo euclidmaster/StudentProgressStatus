@@ -3408,7 +3408,7 @@ const App = {
 
             // 리포트 actions
             case 'report-period': {
-                this._reportPeriod = el.dataset.period || 'monthly';
+                this._reportPeriod = target.dataset.period || 'monthly';
                 this.renderReport(this._reportStudentId);
                 break;
             }
@@ -5457,9 +5457,9 @@ const App = {
         const attTotal = periodAtt.length;
         const attRate = attTotal > 0 ? Math.round((attCounts['출석'] / attTotal) * 100) : null;
 
-        // 숙제
+        // 숙제 (createdAt은 ISO timestamp일 수 있으므로 앞 10자만 사용)
         const hwAll = DataStore.getHomeworkForStudent(student.id).filter(h =>
-            dateFilter(h.dueDate || h.createdAt || '')
+            dateFilter(h.dueDate || (h.createdAt || '').slice(0, 10))
         );
         const hwDone = hwAll.filter(h => DataStore.isHomeworkCompletedBy(h, student.id)).length;
 
@@ -5708,7 +5708,7 @@ const App = {
             periodTitle = `${y}년 ${m}월`;
         }
 
-        const msgContent = `📊 [${periodTitle} ${periodLabel} 학습 리포트]\n${this.escapeHtml(student.name)} 학생의 리포트가 공유되었습니다.\n앱에서 [월간 리포트] 메뉴를 확인해주세요.`;
+        const msgContent = `📊 [${periodTitle} ${periodLabel} 학습 리포트]\n${student.name} 학생의 리포트가 공유되었습니다.\n앱에서 [월간 리포트] 메뉴를 확인해주세요.`;
         const author = this.currentUser ? this.currentUser.name : '선생님';
         const authorRole = this.currentUser ? this.currentUser.role : 'teacher';
 
