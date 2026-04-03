@@ -416,14 +416,23 @@ const App = {
         document.getElementById('sidebar-toggle').addEventListener('click', () => {
             const sb = document.getElementById('sidebar');
             if (window.innerWidth > 768) {
-                // 데스크탑: slim 모드 토글
-                sb.classList.toggle('slim');
-                // slim 모드일 때 그룹 모두 열기 (아이콘 다 보이게)
-                if (sb.classList.contains('slim')) {
-                    document.querySelectorAll('.nav-group').forEach(g => g.classList.add('open'));
+                const isSlim = sb.classList.toggle('slim');
+                if (isSlim) {
+                    // slim 진입: 그룹 상태 저장 후 모두 열기
+                    sb._groupStates = {};
+                    document.querySelectorAll('.nav-group').forEach(g => {
+                        sb._groupStates[g.id] = g.classList.contains('open');
+                        g.classList.add('open');
+                    });
+                } else {
+                    // slim 해제: 저장된 상태 복원
+                    if (sb._groupStates) {
+                        document.querySelectorAll('.nav-group').forEach(g => {
+                            g.classList.toggle('open', sb._groupStates[g.id] !== false);
+                        });
+                    }
                 }
             } else {
-                // 모바일: 오버레이 show/hide
                 sb.classList.toggle('show');
                 document.getElementById('sidebar-overlay').classList.toggle('active', sb.classList.contains('show'));
             }
@@ -1438,7 +1447,8 @@ const App = {
     },
 
     filterPlans() {
-        const studentId = document.getElementById('filter-plan-student').value;
+        const studentEl = document.getElementById('filter-plan-student');
+        const studentId = studentEl ? studentEl.value : '';
         const subject = document.getElementById('filter-plan-subject').value;
         const status = document.getElementById('filter-plan-status').value;
 
@@ -3225,6 +3235,7 @@ const App = {
                 break;
 
             case 'view-teacher':
+                await DataStore._ensureLoaded(DataStore.TABLES.CONSULTATIONS, DataStore.TABLES.SCHEDULES);
                 this.showTeacherDetail(target.dataset.teacherId);
                 break;
 
