@@ -431,7 +431,13 @@ const App = {
         }
 
         document.getElementById('global-search').addEventListener('input', (e) => {
-            if (this.currentView === 'students') this.renderStudents(e.target.value);
+            const q = e.target.value;
+            if (this.currentView === 'students') {
+                this.renderStudents(q);
+            } else if (q.length >= 1) {
+                this.navigate('students');
+                setTimeout(() => this.renderStudents(q), 100);
+            }
         });
 
         document.querySelector('.modal-close').addEventListener('click', () => this.closeModal());
