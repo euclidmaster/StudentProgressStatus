@@ -247,10 +247,10 @@ const App = {
             analyticsNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
         }
 
-        // 일괄 진도 입력 nav: 원장/선생만 표시
+        // 일괄 진도 입력 nav: 학부모 제외 전체 표시
         const bulkNav = document.getElementById('nav-bulk-progress');
         if (bulkNav) {
-            bulkNav.style.display = (role === 'director' || role === 'teacher') ? '' : 'none';
+            bulkNav.style.display = role === 'parent' ? 'none' : '';
         }
 
         // 시간표 nav: 모든 역할 표시 (학생/학부모도 자신의 시간표 조회 가능)
@@ -1966,11 +1966,15 @@ const App = {
     // =========================================
     renderBulkProgress() {
         const role = this.currentUser?.role;
-        if (role !== 'teacher' && role !== 'director') {
+        if (role === 'parent') {
             document.getElementById('content-area').innerHTML = '<div class="empty-state"><i class="fas fa-lock"></i><h3>접근 권한이 없습니다</h3></div>';
             return;
         }
-        const subjects = DataStore.getUniqueSubjects();
+        const isStudent = role === 'student';
+        const subjects = isStudent
+            ? [...new Set(DataStore.getStudentPlans(this.currentUser.studentId)
+                .filter(p => p.status === 'active').map(p => p.subject))]
+            : DataStore.getUniqueSubjects();
         const today = new Date().toISOString().split('T')[0];
         const html = `
             <div class="card" style="margin-bottom:16px">
@@ -2029,11 +2033,11 @@ const App = {
                 <div class="card-body no-padding">
                     <div class="table-wrapper">
                         <table id="bulk-progress-table">
-                            <thead><tr><th>학생</th><th>교재</th><th>현재 진도</th><th>오늘 진행량</th><th>메모</th><th style="text-align:center">건너뜀</th></tr></thead>
+                            <thead><tr>${this.currentUser?.role !== 'student' ? '<th>학생</th>' : ''}<th>교재</th><th>현재 진도</th><th>오늘 진행량</th><th>메모</th><th style="text-align:center">건너뜀</th></tr></thead>
                             <tbody>
                                 ${rows.map((r, idx) => `
                                 <tr data-plan-id="${r.plan.id}" data-student-id="${r.student.id}">
-                                    <td><strong>${this.escapeHtml(r.student.name)}</strong><br><small style="color:var(--gray-400)">${this.escapeHtml(r.student.grade)}</small></td>
+                                    ${this.currentUser?.role !== 'student' ? `<td><strong>${this.escapeHtml(r.student.name)}</strong><br><small style="color:var(--gray-400)">${this.escapeHtml(r.student.grade)}</small></td>` : ''}
                                     <td>${this.escapeHtml(r.plan.textbook)}</td>
                                     <td>
                                         <div class="progress-bar-container" style="width:80px;display:inline-block;vertical-align:middle;margin-right:6px">
