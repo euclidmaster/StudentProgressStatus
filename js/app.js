@@ -235,6 +235,12 @@ const App = {
             tuitionNav.style.display = role === 'director' ? '' : 'none';
         }
 
+        // 데이터 내보내기 nav: 원장만 표시
+        const exportNav = document.getElementById('nav-export');
+        if (exportNav) {
+            exportNav.style.display = role === 'director' ? '' : 'none';
+        }
+
         // 비교 분석 nav: 원장/선생만 표시
         const analyticsNav = document.getElementById('nav-analytics');
         if (analyticsNav) {
@@ -277,9 +283,304 @@ const App = {
             this.navigate('student-detail', { studentId: this.currentUser.studentId });
         } else {
             this.navigate('dashboard');
+            // 원장: 월요일 최초 접속 시 지난주 백업 팝업
+            if (role === 'director') {
+                setTimeout(() => this._checkWeeklyBackupPrompt(), 1200);
+            }
         }
         this.updateUnreadBadge();
         this.updateNotificationBadge();
+    },
+
+    // ─── 월요일 백업 팝업 ────────────────────────────────────
+    _checkWeeklyBackupPrompt() {
+        const today = new Date();
+        if (today.getDay() !== 1) return; // 1 = 월요일만
+
+        const key = 'sps_backup_prompt_week';
+        const todayStr = this.getLocalDateStr();
+        // 이미 이번 주 월요일에 표시했으면 스킵
+        const lastShown = localStorage.getItem(key);
+        if (lastShown === todayStr) return;
+
+        // 지난주 범위 계산 (월~일)
+        const mon = new Date(today);
+        mon.setDate(today.getDate() - 7);
+        const sun = new Date(today);
+        sun.setDate(today.getDate() - 1);
+        const fmt = d => `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+        const weekRange = `${fmt(mon)} ~ ${fmt(sun)}`;
+
+        // 팝업 표시
+        const overlay = document.createElement('div');
+        overlay.id = 'backup-prompt-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML = `
+            <div style="background:#fff;border-radius:16px;padding:32px 28px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.18);">
+                <div style="font-size:2.2rem;margin-bottom:12px;">📦</div>
+                <div style="font-size:1.1rem;font-weight:700;color:#1F2937;margin-bottom:8px;">주간 데이터 백업</div>
+                <div style="font-size:0.9rem;color:#6B7280;margin-bottom:24px;line-height:1.6">
+                    지난주 <strong style="color:#4F46E5">${weekRange}</strong><br>데이터를 백업하시겠습니까?
+                </div>
+                <div style="display:flex;gap:10px;justify-content:center;">
+                    <button id="backup-prompt-yes" style="flex:1;padding:10px;border-radius:8px;background:#4F46E5;color:#fff;border:none;font-size:0.95rem;font-weight:600;cursor:pointer;">
+                        지금 백업
+                    </button>
+                    <button id="backup-prompt-no" style="flex:1;padding:10px;border-radius:8px;background:#F3F4F6;color:#374151;border:none;font-size:0.95rem;cursor:pointer;">
+                        나중에
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const close = () => {
+            localStorage.setItem(key, todayStr);
+            overlay.remove();
+        };
+        document.getElementById('backup-prompt-yes').addEventListener('click', async () => {
+            close();
+            await this._downloadFullBackup();
+        });
+        document.getElementById('backup-prompt-no').addEventListener('click', close);
+    },
+
+    // ─── Export 뷰 렌더링 ───────────────────────────────────
+    renderExportView() {
+        const today = this.getLocalDateStr();
+        const students = DataStore.getStudents();
+        const tables = [
+            { key: 'students', label: '학생', icon: 'fa-user-graduate', color: '#4F46E5' },
+            { key: 'teachers', label: '교직원(계정)', icon: 'fa-chalkboard-teacher', color: '#7C3AED' },
+            { key: 'plans', label: '학습 계획', icon: 'fa-book-open', color: '#0891B2' },
+            { key: 'progress', label: '진도 기록', icon: 'fa-chart-line', color: '#059669' },
+            { key: 'attendance', label: '출석', icon: 'fa-calendar-check', color: '#D97706' },
+            { key: 'homework', label: '숙제', icon: 'fa-tasks', color: '#DC2626' },
+            { key: 'grades', label: '성적', icon: 'fa-trophy', color: '#B45309' },
+            { key: 'comments', label: '코멘트', icon: 'fa-comments', color: '#6366F1' },
+            { key: 'consultations', label: '상담 일지', icon: 'fa-user-md', color: '#0D9488' },
+            { key: 'messages', label: '내부 소통', icon: 'fa-envelope', color: '#64748B' },
+            { key: 'board_posts', label: '게시판', icon: 'fa-clipboard-list', color: '#92400E' },
+            { key: 'exam_plans', label: '시험 플래너', icon: 'fa-clipboard-check', color: '#BE185D' },
+            { key: 'tuition', label: '수업료', icon: 'fa-won-sign', color: '#15803D' },
+            { key: 'schedules', label: '시간표', icon: 'fa-calendar-week', color: '#9333EA' },
+        ];
+
+        const counts = {};
+        tables.forEach(t => {
+            const cache = DataStore._cache[t.key];
+            counts[t.key] = cache ? cache.length : 0;
+        });
+
+        const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
+
+        document.getElementById('content-area').innerHTML = `
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-body" style="padding:28px">
+                <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+                    <div style="font-size:3rem">📦</div>
+                    <div style="flex:1">
+                        <div style="font-size:1.2rem;font-weight:700;color:#1F2937;margin-bottom:4px">전체 데이터 내보내기</div>
+                        <div style="font-size:0.9rem;color:#6B7280">
+                            현재 학생 <strong>${students.length}명</strong>, 전체 <strong>${totalRecords.toLocaleString()}건</strong> 데이터 · 기준일: ${today}
+                        </div>
+                    </div>
+                    <button class="btn btn-lg" style="background:#4F46E5;color:#fff;gap:8px;font-size:1rem;padding:14px 28px" data-action="export-download-all" id="btn-export-all">
+                        <i class="fas fa-download"></i> 전체 ZIP 백업
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+            ${tables.map(t => `
+            <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;align-items:center;gap:12px">
+                <div style="width:38px;height:38px;border-radius:10px;background:${t.color}18;display:flex;align-items:center;justify-content:center;color:${t.color};font-size:1rem;flex-shrink:0">
+                    <i class="fas ${t.icon}"></i>
+                </div>
+                <div>
+                    <div style="font-weight:600;font-size:0.88rem;color:#1F2937">${t.label}</div>
+                    <div style="font-size:0.82rem;color:#9CA3AF">${counts[t.key].toLocaleString()}건</div>
+                </div>
+            </div>`).join('')}
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-info-circle" style="color:#4F46E5"></i> 백업 파일 안내</h2></div>
+            <div class="card-body">
+                <ul style="color:#6B7280;font-size:0.9rem;line-height:2;padding-left:1.2rem;margin:0">
+                    <li>ZIP 파일 안에 <strong>JSON 전체백업</strong> 1개 + <strong>CSV 파일</strong> 14개가 포함됩니다.</li>
+                    <li>JSON 파일은 전체 복원에, CSV 파일은 엑셀에서 바로 열람 가능합니다.</li>
+                    <li>비밀번호 해시값은 포함되나, 평문 비밀번호는 저장되지 않습니다.</li>
+                    <li>매주 월요일 로그인 시 자동으로 백업 알림이 표시됩니다.</li>
+                </ul>
+            </div>
+        </div>`;
+
+        document.getElementById('content-area').querySelector('[data-action="export-download-all"]')
+            .addEventListener('click', async (e) => {
+                e.currentTarget.disabled = true;
+                e.currentTarget.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 준비 중...';
+                await this._downloadFullBackup();
+                e.currentTarget.disabled = false;
+                e.currentTarget.innerHTML = '<i class="fas fa-download"></i> 전체 ZIP 백업';
+            });
+    },
+
+    // ─── 전체 ZIP 백업 다운로드 ─────────────────────────────
+    async _downloadFullBackup() {
+        if (typeof JSZip === 'undefined') {
+            this.toast('ZIP 라이브러리를 불러오는 중입니다. 잠시 후 다시 시도해주세요.', 'warning');
+            return;
+        }
+
+        this.toast('데이터를 수집하는 중...', 'info');
+
+        try {
+            // 모든 테이블 로드 보장
+            const T = DataStore.TABLES;
+            await DataStore._ensureLoaded(
+                T.STUDENTS, T.TEACHERS, T.PLANS, T.PROGRESS, T.COMMENTS,
+                T.MESSAGES, T.GRADES, T.BOARD_POSTS, T.BOARD_EVENTS,
+                T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.CONSULTATIONS,
+                T.TUITION, T.SCHEDULES
+            );
+
+            const today = this.getLocalDateStr();
+            const zip = new JSZip();
+            const folder = zip.folder(`EM플러스_백업_${today}`);
+
+            // ── 1. JSON 전체 백업 ──────────────────────────
+            const fullJson = {};
+            Object.keys(DataStore._cache).forEach(key => {
+                fullJson[key] = DataStore._cache[key];
+            });
+            folder.file('전체백업.json', JSON.stringify(fullJson, null, 2));
+
+            // ── 2. CSV 파일 생성 헬퍼 ──────────────────────
+            const toCSV = (rows) => {
+                if (!rows || rows.length === 0) return '';
+                // 모든 키 수집
+                const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+                const escape = v => {
+                    if (v === null || v === undefined) return '';
+                    const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                    return s.includes(',') || s.includes('"') || s.includes('\n')
+                        ? `"${s.replace(/"/g, '""')}"` : s;
+                };
+                const header = keys.join(',');
+                const body = rows.map(r => keys.map(k => escape(r[k])).join(',')).join('\n');
+                return '\uFEFF' + header + '\n' + body; // BOM for Excel
+            };
+
+            const csvFolder = folder.folder('csv');
+
+            // 학생 목록 (읽기 쉬운 형태)
+            const students = DataStore.getStudents();
+            const studentsCSV = toCSV(students.map(s => ({
+                이름: s.name, 학년: s.grade, 학교: s.school || '',
+                반: s.className || '', 연락처: s.phone || '',
+                학부모명: s.parentName || '', 학부모연락처: s.parentPhone || '',
+                등록일: s.regDate || '', 메모: s.memo || ''
+            })));
+            csvFolder.file('학생목록.csv', studentsCSV);
+
+            // 학습 계획
+            const plans = DataStore.getPlans();
+            const studentMap = {};
+            students.forEach(s => { studentMap[s.id] = s.name; });
+            csvFolder.file('학습계획.csv', toCSV(plans.map(p => ({
+                학생명: studentMap[p.studentId] || p.studentId,
+                과목: p.subject, 교재: p.textbook || '',
+                시작일: p.startDate || '', 종료일: p.endDate || '',
+                총단위: p.totalUnits || 0, 완료단위: p.completedUnits || 0,
+                단위명: p.unitLabel || '', 상태: p.status || ''
+            }))));
+
+            // 진도 기록
+            const progress = DataStore.getProgressEntries();
+            csvFolder.file('진도기록.csv', toCSV(progress.map(pr => ({
+                학생명: studentMap[pr.studentId] || pr.studentId,
+                날짜: pr.date || '', 과목: pr.subject || '',
+                진도량: pr.amount || 0, 메모: pr.note || ''
+            }))));
+
+            // 출석
+            const attendance = DataStore.getAttendances();
+            csvFolder.file('출석현황.csv', toCSV(attendance.map(a => ({
+                학생명: studentMap[a.studentId] || a.studentId,
+                날짜: a.date || '', 상태: a.status || '', 메모: a.note || ''
+            }))));
+
+            // 숙제
+            const homework = DataStore.getHomework();
+            csvFolder.file('숙제관리.csv', toCSV(homework.map(h => ({
+                제목: h.title || '', 내용: h.content || '',
+                마감일: h.dueDate || '', 과목: h.subject || '',
+                작성자: h.author || ''
+            }))));
+
+            // 성적
+            const grades = DataStore.getGrades();
+            // 과목별로 펼쳐서 저장
+            const gradesFlat = grades.flatMap(g =>
+                (g.subjects || []).map(s => ({
+                    학생명: studentMap[g.studentId] || g.studentId,
+                    시험명: g.examName || g.examType || '',
+                    시험일: g.examDate || '', 과목: s.subject || '',
+                    점수: s.score || '', 등급: s.grade || '',
+                    평균: g.totalAvg || '', 석차: g.totalRank || ''
+                }))
+            );
+            if (gradesFlat.length === 0) {
+                csvFolder.file('성적현황.csv', toCSV(grades.map(g => ({
+                    학생명: studentMap[g.studentId] || g.studentId,
+                    시험명: g.examName || '', 시험일: g.examDate || ''
+                }))));
+            } else {
+                csvFolder.file('성적현황.csv', toCSV(gradesFlat));
+            }
+
+            // 상담 일지
+            const consultations = DataStore.getConsultations();
+            csvFolder.file('상담일지.csv', toCSV(consultations.map(c => ({
+                학생명: studentMap[c.studentId] || c.studentId,
+                날짜: c.date || '', 유형: c.type || '',
+                담당자: c.teacherName || '', 내용: c.content || '',
+                다음상담일: c.nextDate || '', 다음상담메모: c.nextMemo || ''
+            }))));
+
+            // 수업료
+            const tuition = DataStore.getTuition();
+            csvFolder.file('수업료관리.csv', toCSV(tuition.map(t => ({
+                학생명: studentMap[t.studentId] || t.studentId,
+                연월: t.yearMonth || '', 청구액: t.amount || 0,
+                납부액: t.paidAmount || 0, 납부일: t.paidDate || '',
+                상태: t.status || '', 메모: t.note || ''
+            }))));
+
+            // 나머지 테이블은 JSON 그대로 CSV
+            ['comments', 'messages', 'board_posts', 'board_events', 'exam_plans', 'schedules'].forEach(key => {
+                const labelMap = { comments: '코멘트', messages: '내부소통', board_posts: '게시판', board_events: '학사일정', exam_plans: '시험플래너', schedules: '시간표' };
+                csvFolder.file(`${labelMap[key]}.csv`, toCSV(DataStore._cache[key] || []));
+            });
+
+            // ── 3. ZIP 생성 및 다운로드 ───────────────────
+            const blob = await zip.generateAsync({
+                type: 'blob',
+                compression: 'DEFLATE',
+                compressionOptions: { level: 6 }
+            });
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `EM플러스_전체백업_${today}.zip`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+
+            this.toast(`백업 완료! (${today})`, 'success');
+        } catch (err) {
+            this.toast('백업 중 오류가 발생했습니다: ' + err.message, 'error');
+        }
     },
 
     handleLogout() {
@@ -524,14 +825,14 @@ const App = {
             plans: 'navg-study', progress: 'navg-study', 'bulk-progress': 'navg-study', homework: 'navg-study',
             exam: 'navg-study', comments: 'navg-study', report: 'navg-study', schedule: 'navg-study',
             grades: 'navg-ops', board: 'navg-ops', notifications: 'navg-ops',
-            messages: 'navg-ops', tasks: 'navg-ops', tuition: 'navg-ops'
+            messages: 'navg-ops', tasks: 'navg-ops', tuition: 'navg-ops', export: 'navg-ops'
         };
         const targetGroup = viewGroupMap[view];
         if (targetGroup) {
             document.getElementById(targetGroup)?.classList.add('open');
         }
 
-        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', 'bulk-progress': '일괄 진도 입력', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '학습 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표' };
+        const titles = { dashboard: '대시보드', students: '학생 관리', 'student-detail': '학생 상세', plans: '학습 계획', progress: '진도 현황', 'bulk-progress': '일괄 진도 입력', comments: '코멘트', grades: '성적 관리', board: '학원 게시판', messages: '내부 소통', tasks: '업무 노트', attendance: '출석 관리', homework: '숙제 관리', exam: '시험 플래너', consultations: '상담 일지', notifications: '알림 센터', report: '학습 리포트', teachers: '선생님 관리', tuition: '수업료 관리', analytics: '학생 비교 분석', 'parent-home': '학부모 홈', schedule: '시간표', export: '데이터 내보내기' };
         document.getElementById('page-title').textContent = titles[view] || '';
 
         Charts.destroyAll();
@@ -599,6 +900,7 @@ const App = {
             case 'parent-home': this.renderParentHome(); break;
             case 'schedule': this.renderSchedule(); break;
             case 'bulk-progress': this.renderBulkProgress(); break;
+            case 'export': this.renderExportView(); break;
         }
     },
 
