@@ -402,8 +402,18 @@ const App = {
 
         document.getElementById('sidebar-toggle').addEventListener('click', () => {
             const sb = document.getElementById('sidebar');
-            sb.classList.toggle('show');
-            document.getElementById('sidebar-overlay').classList.toggle('active', sb.classList.contains('show'));
+            if (window.innerWidth > 768) {
+                // 데스크탑: slim 모드 토글
+                sb.classList.toggle('slim');
+                // slim 모드일 때 그룹 모두 열기 (아이콘 다 보이게)
+                if (sb.classList.contains('slim')) {
+                    document.querySelectorAll('.nav-group').forEach(g => g.classList.add('open'));
+                }
+            } else {
+                // 모바일: 오버레이 show/hide
+                sb.classList.toggle('show');
+                document.getElementById('sidebar-overlay').classList.toggle('active', sb.classList.contains('show'));
+            }
         });
 
         document.getElementById('sidebar-overlay').addEventListener('click', () => {

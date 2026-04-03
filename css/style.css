@@ -79,10 +79,57 @@ a:hover { text-decoration: underline; }
     left: 0;
     bottom: 0;
     z-index: 100;
-    transition: transform var(--transition);
+    transition: width 0.25s ease, transform var(--transition);
+    overflow: hidden;
+}
+
+#main-content {
+    transition: margin-left 0.25s ease;
 }
 
 #sidebar.collapsed { transform: translateX(-250px); }
+
+/* === Slim (mini) sidebar === */
+#sidebar.slim { width: 64px; }
+
+#sidebar.slim .sidebar-logo-img { display: none; }
+#sidebar.slim .sidebar-header { padding: 20px 0; display: flex; justify-content: center; }
+#sidebar.slim .sidebar-header::after { content: 'EM'; color: #fff; font-weight: 700; font-size: 1rem; }
+
+#sidebar.slim .nav-item { padding: 12px 0; justify-content: center; gap: 0; position: relative; }
+#sidebar.slim .nav-item span { display: none; }
+#sidebar.slim .nav-item i { width: auto; font-size: 1.1rem; }
+#sidebar.slim .nav-item .unread-badge { position: absolute; top: 6px; right: 8px; }
+
+/* slim 모드 툴팁 */
+#sidebar.slim .nav-item::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 68px;
+    background: #1E1B4B;
+    color: #fff;
+    font-size: 0.82rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 200;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+#sidebar.slim .nav-item:hover::after { opacity: 1; }
+
+#sidebar.slim .nav-group-header { padding: 8px 0; justify-content: center; gap: 0; }
+#sidebar.slim .nav-group-header span { display: none; }
+#sidebar.slim .nav-group-header .nav-group-arrow { display: none; }
+#sidebar.slim .nav-group-header > i:first-child { width: auto; font-size: 0.9rem; }
+#sidebar.slim .nav-group-items .nav-item { padding-left: 0; }
+
+#sidebar.slim .sidebar-footer { padding: 12px 0; display: flex; justify-content: center; }
+#sidebar.slim .sidebar-footer .text-xs { display: none; }
+
+#sidebar.slim ~ #main-content { margin-left: 64px; }
 
 .sidebar-header {
     padding: 24px 20px 16px;
@@ -189,7 +236,7 @@ a:hover { text-decoration: underline; }
     flex: 1;
     margin-left: 250px;
     min-height: 100vh;
-    transition: margin-left var(--transition);
+    transition: margin-left 0.25s ease;
 }
 
 #sidebar.collapsed ~ #main-content { margin-left: 0; }
