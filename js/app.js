@@ -436,7 +436,7 @@ const App = {
                 this.renderStudents(q);
             } else if (q.length >= 1) {
                 this.navigate('students');
-                setTimeout(() => this.renderStudents(q), 100);
+                setTimeout(() => this.renderStudents(q), 300);
             }
         });
 
@@ -710,7 +710,16 @@ const App = {
         const allStudents = visibleStudents;
         const grades = [...new Set(visibleStudents.map(s => s.grade))].sort();
         let students = searchQuery
-            ? visibleStudents.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.school.toLowerCase().includes(searchQuery.toLowerCase()))
+            ? visibleStudents.filter(s => {
+                const q = searchQuery.toLowerCase();
+                return (s.name || '').toLowerCase().includes(q) ||
+                       (s.school || '').toLowerCase().includes(q) ||
+                       (s.grade || '').toLowerCase().includes(q) ||
+                       (s.className || '').toLowerCase().includes(q) ||
+                       (s.phone || '').includes(q) ||
+                       (s.parentName || '').toLowerCase().includes(q) ||
+                       (s.parentPhone || '').includes(q);
+              })
             : allStudents;
 
         const html = `
@@ -790,7 +799,15 @@ const App = {
         const search = document.getElementById('global-search').value;
         if (search) {
             const q = search.toLowerCase();
-            students = students.filter(s => s.name.toLowerCase().includes(q) || s.school.toLowerCase().includes(q));
+            students = students.filter(s =>
+                (s.name || '').toLowerCase().includes(q) ||
+                (s.school || '').toLowerCase().includes(q) ||
+                (s.grade || '').toLowerCase().includes(q) ||
+                (s.className || '').toLowerCase().includes(q) ||
+                (s.phone || '').includes(q) ||
+                (s.parentName || '').toLowerCase().includes(q) ||
+                (s.parentPhone || '').includes(q)
+            );
         }
 
         const tbody = document.querySelector('#students-table tbody');
