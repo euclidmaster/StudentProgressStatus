@@ -337,7 +337,9 @@ const App = {
             localStorage.setItem(key, todayStr);
             overlay.remove();
         };
-        document.getElementById('backup-prompt-yes').addEventListener('click', async () => {
+        document.getElementById('backup-prompt-yes').addEventListener('click', async (e) => {
+            e.currentTarget.disabled = true;
+            e.currentTarget.textContent = '백업 중...';
             close();
             await this._downloadFullBackup();
         });
@@ -458,7 +460,7 @@ const App = {
 
             // ── 2. CSV 파일 생성 헬퍼 ──────────────────────
             const toCSV = (rows) => {
-                if (!rows || rows.length === 0) return '';
+                if (!rows || rows.length === 0) return '\uFEFF데이터 없음\n';
                 // 모든 키 수집
                 const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
                 const escape = v => {
@@ -496,11 +498,14 @@ const App = {
                 단위명: p.unitLabel || '', 상태: p.status || ''
             }))));
 
-            // 진도 기록
+            // 진도 기록 (planId → 과목명 매핑)
             const progress = DataStore.getProgressEntries();
+            const planSubjectMap = {};
+            DataStore.getPlans().forEach(p => { planSubjectMap[p.id] = p.subject || ''; });
             csvFolder.file('진도기록.csv', toCSV(progress.map(pr => ({
                 학생명: studentMap[pr.studentId] || pr.studentId,
-                날짜: pr.date || '', 과목: pr.subject || '',
+                날짜: pr.date || '',
+                과목: planSubjectMap[pr.planId] || pr.planId || '',
                 진도량: pr.amount || 0, 메모: pr.note || ''
             }))));
 
@@ -862,6 +867,10 @@ const App = {
             'parent-home':    [T.PLANS, T.PROGRESS, T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.COMMENTS, T.GRADES],
             'schedule':       [T.SCHEDULES],
             'bulk-progress':  [T.PLANS, T.PROGRESS],
+            'export':         [T.STUDENTS, T.TEACHERS, T.PLANS, T.PROGRESS, T.COMMENTS,
+                               T.MESSAGES, T.GRADES, T.BOARD_POSTS, T.BOARD_EVENTS,
+                               T.ATTENDANCE, T.HOMEWORK, T.EXAM_PLANS, T.CONSULTATIONS,
+                               T.TUITION, T.SCHEDULES],
         };
 
         const needed = viewTables[view] || [];
