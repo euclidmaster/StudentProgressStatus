@@ -223,34 +223,65 @@ a:hover { text-decoration: underline; }
 .header-right { display: flex; align-items: center; gap: 12px; }
 
 .search-box {
-    position: relative;
     display: flex;
     align-items: center;
-}
-
-.search-box i {
-    position: absolute;
-    left: 12px;
-    color: var(--gray-400);
-    font-size: 0.85rem;
-}
-
-.search-box input {
-    padding: 8px 12px 8px 36px;
     border: 1px solid var(--gray-200);
     border-radius: var(--radius-sm);
-    font-size: 0.9rem;
-    font-family: inherit;
-    width: 260px;
     background: var(--gray-50);
+    overflow: hidden;
     transition: all var(--transition);
 }
 
-.search-box input:focus {
-    outline: none;
+.search-box:focus-within {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
     background: #fff;
+}
+
+.search-box input {
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    font-size: 0.9rem;
+    font-family: inherit;
+    width: 220px;
+    outline: none;
+}
+
+.search-btn {
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--gray-400);
+    cursor: pointer;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    transition: color var(--transition);
+}
+
+.search-btn:hover {
+    color: var(--primary);
+    background: rgba(79, 70, 229, 0.06);
+}
+
+/* 모바일: 검색창 접기/펼치기 */
+@media (max-width: 640px) {
+    .search-box {
+        position: relative;
+    }
+    .search-box input {
+        width: 0;
+        padding: 8px 0;
+        transition: width 0.3s ease, padding 0.3s ease;
+    }
+    .search-box.open input {
+        width: 160px;
+        padding: 8px 12px;
+    }
+    .search-btn {
+        padding: 8px 10px;
+    }
 }
 
 /* === Content Area === */
@@ -1120,7 +1151,7 @@ textarea.form-control {
     #content-area { padding: 16px; }
     #header { padding: 12px 16px; }
     .stats-grid { grid-template-columns: 1fr; }
-    .search-box input { width: 180px; }
+    .search-box.open input { width: 160px; }
     .student-header { flex-direction: column; align-items: flex-start; }
     .student-header-actions { width: 100%; }
     .modal { max-width: 95vw; margin: 10px; }

@@ -430,13 +430,42 @@ const App = {
             bellBtn.addEventListener('click', () => this.navigate('notifications'));
         }
 
-        document.getElementById('global-search').addEventListener('input', (e) => {
-            const q = e.target.value;
+        const searchInput = document.getElementById('global-search');
+        const searchBox = searchInput.closest('.search-box');
+        const searchBtn = document.getElementById('btn-search');
+
+        const doSearch = (q) => {
             if (this.currentView === 'students') {
                 this.renderStudents(q);
             } else if (q.length >= 1) {
                 this.navigate('students');
                 setTimeout(() => this.renderStudents(q), 300);
+            }
+        };
+
+        searchInput.addEventListener('input', (e) => doSearch(e.target.value));
+
+        searchBtn.addEventListener('click', () => {
+            // 모바일: 검색창 열기/닫기 토글
+            if (window.innerWidth <= 640) {
+                if (!searchBox.classList.contains('open')) {
+                    searchBox.classList.add('open');
+                    searchInput.focus();
+                    return;
+                }
+            }
+            const q = searchInput.value.trim();
+            if (q) {
+                doSearch(q);
+            } else {
+                searchInput.focus();
+            }
+        });
+
+        // 모바일: 검색창 바깥 클릭 시 닫기
+        document.addEventListener('click', (e) => {
+            if (!searchBox.contains(e.target)) {
+                searchBox.classList.remove('open');
             }
         });
 
