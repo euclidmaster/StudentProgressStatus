@@ -2705,6 +2705,15 @@ th.sortable i {
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
+/* 캡처 버튼 비활성 상태 */
+#btn-report-capture:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+#btn-report-capture:disabled .fas {
+    animation: fa-spin 1s linear infinite;
+}
+
 .report-subject-chip {
     display: inline-flex;
     align-items: center;

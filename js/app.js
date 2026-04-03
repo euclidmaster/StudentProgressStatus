@@ -3438,6 +3438,10 @@ const App = {
                 await this._shareReport();
                 break;
 
+            case 'report-capture':
+                await this._captureReport(target);
+                break;
+
             // 이전 호환 (혹시 남아있는 링크)
             case 'report-prev-month': {
                 const [ry, rm] = (this._reportYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
@@ -5415,6 +5419,9 @@ const App = {
                 </div>
                 <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
                     ${shareBtn}
+                    <button class="btn btn-outline btn-sm" data-action="report-capture" id="btn-report-capture">
+                        <i class="fas fa-camera"></i> <span id="capture-btn-label">이미지 저장</span>
+                    </button>
                     <button class="btn btn-outline btn-sm" data-action="report-print"><i class="fas fa-print"></i> 인쇄/PDF</button>
                 </div>
             </div>
@@ -5750,6 +5757,122 @@ const App = {
         } catch (e) {
             this.toast('공유 중 오류가 발생했습니다.', 'error');
         }
+    },
+
+    async _captureReport(btn) {
+        if (typeof html2canvas === 'undefined') {
+            this.toast('캡처 라이브러리를 불러오는 중입니다. 잠시 후 다시 시도해주세요.', 'warning');
+            return;
+        }
+
+        const label = document.getElementById('capture-btn-label');
+        const btnIcon = btn ? btn.querySelector('i.fas') : null;
+        const restoreBtn = () => {
+            if (btn) btn.disabled = false;
+            if (btnIcon) btnIcon.className = 'fas fa-camera';
+            if (label) label.textContent = '이미지 저장';
+        };
+        if (btn) btn.disabled = true;
+        if (btnIcon) btnIcon.className = 'fas fa-spinner fa-spin';
+        if (label) label.textContent = '캡처 중...';
+
+        const contentArea = document.getElementById('content-area');
+        const controlCard = contentArea ? contentArea.querySelector('.card') : null;
+        const navState = document.getElementById('report-nav-state');
+
+        try {
+            // 컨트롤바 임시 숨김 → 리포트 본문만 캡처
+            if (controlCard) controlCard.style.display = 'none';
+            if (navState) navState.style.display = 'none';
+
+            const canvas = await html2canvas(contentArea, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#F3F4F6',
+                logging: false,
+                onclone: (doc) => {
+                    doc.querySelectorAll('[style*="overflow"]').forEach(el => {
+                        el.style.overflow = 'visible';
+                        el.style.maxHeight = 'none';
+                    });
+                }
+            });
+
+            // 컨트롤바 복원
+            if (controlCard) controlCard.style.display = '';
+
+            const student = DataStore.getStudent(this._reportStudentId);
+            const period = this._reportPeriod || 'monthly';
+            const periodLabelMap = { daily: '일간', weekly: '주간', monthly: '월간' };
+            const today = this.getLocalDateStr();
+            const fileName = `${student ? student.name + '_' : ''}${periodLabelMap[period]}_리포트_${today}.png`;
+
+            // 모바일: Web Share API → 카카오톡 등 앱 공유 시트
+            if (navigator.canShare) {
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        this.toast('이미지 생성에 실패했습니다.', 'error');
+                        restoreBtn();
+                        return;
+                    }
+                    const file = new File([blob], fileName, { type: 'image/png' });
+                    if (navigator.canShare({ files: [file] })) {
+                        try {
+                            await navigator.share({
+                                files: [file],
+                                title: `${student ? student.name : ''} 학습 리포트`,
+                                text: '학습 리포트 이미지입니다.'
+                            });
+                        } catch (shareErr) {
+                            if (shareErr.name !== 'AbortError') {
+                                await this._copyOrDownloadCanvas(canvas, fileName);
+                            }
+                        }
+                    } else {
+                        await this._copyOrDownloadCanvas(canvas, fileName);
+                    }
+                    restoreBtn();
+                }, 'image/png');
+            } else {
+                // PC: 클립보드 복사 → 실패 시 다운로드
+                await this._copyOrDownloadCanvas(canvas, fileName);
+                restoreBtn();
+            }
+        } catch (err) {
+            if (controlCard) controlCard.style.display = '';
+            restoreBtn();
+            this.toast('캡처 중 오류가 발생했습니다: ' + err.message, 'error');
+        }
+    },
+
+    async _copyOrDownloadCanvas(canvas, fileName) {
+        if (navigator.clipboard && window.ClipboardItem) {
+            try {
+                await new Promise((resolve, reject) => {
+                    canvas.toBlob(async (blob) => {
+                        if (!blob) { reject(new Error('blob null')); return; }
+                        try {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({ 'image/png': blob })
+                            ]);
+                            this.toast('이미지가 클립보드에 복사되었습니다. 카카오톡 채팅창에 Ctrl+V로 붙여넣으세요.', 'success');
+                            resolve();
+                        } catch (e) {
+                            reject(e);
+                        }
+                    }, 'image/png');
+                });
+                return;
+            } catch (_) {
+                // 클립보드 실패 → 다운로드 fallback
+            }
+        }
+        // 다운로드
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        this.toast('이미지가 저장되었습니다. 카카오톡에서 사진을 첨부해 전송하세요.', 'success');
     },
 
     // =========================================
