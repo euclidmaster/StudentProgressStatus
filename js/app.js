@@ -3406,19 +3406,51 @@ const App = {
                 this.showDateEvents(target.dataset.date || target.closest('[data-date]').dataset.date);
                 break;
 
-            // 월간 리포트 actions
+            // 리포트 actions
+            case 'report-period': {
+                this._reportPeriod = el.dataset.period || 'monthly';
+                this.renderReport(this._reportStudentId);
+                break;
+            }
+            case 'report-prev': {
+                const nav = document.getElementById('report-nav-state');
+                const prevKey = nav ? nav.dataset.prev : null;
+                if (!prevKey) break;
+                const p = this._reportPeriod || 'monthly';
+                if (p === 'daily') this._reportDay = prevKey;
+                else if (p === 'weekly') this._reportWeek = prevKey;
+                else this._reportYM = prevKey;
+                this.renderReport(this._reportStudentId);
+                break;
+            }
+            case 'report-next': {
+                const nav2 = document.getElementById('report-nav-state');
+                const nextKey = nav2 ? nav2.dataset.next : null;
+                if (!nextKey) break;
+                const p2 = this._reportPeriod || 'monthly';
+                if (p2 === 'daily') this._reportDay = nextKey;
+                else if (p2 === 'weekly') this._reportWeek = nextKey;
+                else this._reportYM = nextKey;
+                this.renderReport(this._reportStudentId);
+                break;
+            }
+            case 'report-share':
+                await this._shareReport();
+                break;
+
+            // 이전 호환 (혹시 남아있는 링크)
             case 'report-prev-month': {
                 const [ry, rm] = (this._reportYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
                 const prev = new Date(ry, rm - 2, 1);
                 this._reportYM = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
-                this.renderReport(this._reportStudentId, this._reportYM);
+                this.renderReport(this._reportStudentId);
                 break;
             }
             case 'report-next-month': {
                 const [ry, rm] = (this._reportYM || this.getLocalDateStr().slice(0,7)).split('-').map(Number);
                 const next = new Date(ry, rm, 1);
                 this._reportYM = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`;
-                this.renderReport(this._reportStudentId, this._reportYM);
+                this.renderReport(this._reportStudentId);
                 break;
             }
 
@@ -5281,19 +5313,37 @@ const App = {
     // =========================================
     //  VIEW: REPORT (월간 학습 리포트)
     // =========================================
-    renderReport(studentId, ym) {
+    renderReport(studentId, periodKey) {
         const role = this.currentUser ? this.currentUser.role : '';
         const isStudent = role === 'student';
+        const isParent = role === 'parent';
         const today = this.getLocalDateStr();
-        const currentYM = this._reportYM || today.slice(0, 7);
-        this._reportYM = ym || currentYM;
-        const reportYM = this._reportYM;
+
+        // period tab: 'daily' | 'weekly' | 'monthly'
+        if (!this._reportPeriod) this._reportPeriod = 'monthly';
+        const period = this._reportPeriod;
+
+        // 기간 key 초기화
+        if (period === 'monthly') {
+            if (!this._reportYM) this._reportYM = today.slice(0, 7);
+            if (periodKey) this._reportYM = periodKey;
+        } else if (period === 'weekly') {
+            if (!this._reportWeek) this._reportWeek = this._getWeekStart(today);
+            if (periodKey) this._reportWeek = periodKey;
+        } else {
+            if (!this._reportDay) this._reportDay = today;
+            if (periodKey) this._reportDay = periodKey;
+        }
+
+        const reportYM = this._reportYM || today.slice(0,7);
+        const reportWeek = this._reportWeek || this._getWeekStart(today);
+        const reportDay = this._reportDay || today;
         const [year, month] = reportYM.split('-').map(Number);
 
         // 학생 선택 처리
         const students = this.getVisibleStudents();
         if (!studentId) {
-            if (isStudent) {
+            if (isStudent || isParent) {
                 studentId = this.currentUser.studentId;
             } else if (this._reportStudentId) {
                 studentId = this._reportStudentId;
@@ -5302,160 +5352,144 @@ const App = {
             }
         }
         this._reportStudentId = studentId;
-
         const student = studentId ? DataStore.getStudent(studentId) : null;
 
-        // 학생 선택 드롭다운 (선생/원장만)
-        const studentSelector = (!isStudent && students.length > 0) ? `
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <label style="font-weight:600;white-space:nowrap">학생 선택</label>
-            <select id="report-student-select" class="form-control" style="max-width:200px">
-                ${students.map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
-            </select>
-        </div>` : '';
+        // ── 기간 범위 계산 ────────────────────────────
+        const periodLabel = { daily: '일간', weekly: '주간', monthly: '월간' }[period];
+        let dateFilter, periodTitle, prevKey, nextKey;
+        if (period === 'daily') {
+            dateFilter = d => d === reportDay;
+            const [dy, dm, dd] = reportDay.split('-').map(Number);
+            periodTitle = `${dy}년 ${dm}월 ${dd}일`;
+            const prev = new Date(dy, dm-1, dd-1);
+            const next = new Date(dy, dm-1, dd+1);
+            prevKey = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}-${String(prev.getDate()).padStart(2,'0')}`;
+            nextKey = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
+        } else if (period === 'weekly') {
+            const ws = reportWeek; // 'YYYY-MM-DD' (월요일)
+            const we = this._addDays(ws, 6);
+            dateFilter = d => d >= ws && d <= we;
+            const [wy, wm, wd] = ws.split('-').map(Number);
+            const [ey, em, ed] = we.split('-').map(Number);
+            periodTitle = wy === ey
+                ? `${wy}년 ${wm}월 ${wd}일 ~ ${em}월 ${ed}일`
+                : `${wy}년 ${wm}월 ${wd}일 ~ ${ey}년 ${em}월 ${ed}일`;
+            prevKey = this._getWeekStart(this._addDays(ws, -7));
+            nextKey = this._getWeekStart(this._addDays(ws, 7));
+        } else {
+            dateFilter = d => (d || '').startsWith(reportYM);
+            periodTitle = `${year}년 ${month}월`;
+            const prev = new Date(year, month-2, 1);
+            const next = new Date(year, month, 1);
+            prevKey = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+            nextKey = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`;
+        }
 
-        // 월 이동 컨트롤
-        const monthNav = `
-        <div style="display:flex;align-items:center;gap:8px">
-            <button class="btn btn-outline btn-sm" data-action="report-prev-month"><i class="fas fa-chevron-left"></i></button>
-            <strong style="font-size:1rem;min-width:90px;text-align:center">${year}년 ${month}월</strong>
-            <button class="btn btn-outline btn-sm" data-action="report-next-month"><i class="fas fa-chevron-right"></i></button>
-        </div>
-        <button class="btn btn-outline btn-sm" data-action="report-print" style="margin-left:auto"><i class="fas fa-print"></i> 인쇄 / PDF</button>`;
+        // ── 기간 탭 & 네비 컨트롤 ──────────────────────
+        const periodTabs = `
+        <div class="report-period-tabs">
+            <button class="report-period-tab ${period==='daily'?'active':''}" data-action="report-period" data-period="daily">일간</button>
+            <button class="report-period-tab ${period==='weekly'?'active':''}" data-action="report-period" data-period="weekly">주간</button>
+            <button class="report-period-tab ${period==='monthly'?'active':''}" data-action="report-period" data-period="monthly">월간</button>
+        </div>`;
 
-        // 컨트롤 바
+        const studentSelector = (!isStudent && !isParent && students.length > 0) ? `
+        <select id="report-student-select" class="form-control" style="max-width:200px">
+            ${students.map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${this.escapeHtml(s.name)} (${this.escapeHtml(s.grade)})</option>`).join('')}
+        </select>` : '';
+
+        const shareBtn = (!isStudent && !isParent && student) ? `
+        <button class="btn btn-sm" style="background:#6366F1;color:#fff;gap:6px" data-action="report-share">
+            <i class="fas fa-share-alt"></i> 학생/학부모 공유
+        </button>` : '';
+
         const controlBar = `
         <div class="card" style="margin-bottom:16px">
-            <div class="card-body" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                ${periodTabs}
                 ${studentSelector}
-                ${monthNav}
+                <div style="display:flex;align-items:center;gap:6px;margin-left:4px">
+                    <button class="btn btn-outline btn-sm" data-action="report-prev"><i class="fas fa-chevron-left"></i></button>
+                    <strong style="font-size:0.95rem;min-width:160px;text-align:center">${periodTitle}</strong>
+                    <button class="btn btn-outline btn-sm" data-action="report-next"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+                    ${shareBtn}
+                    <button class="btn btn-outline btn-sm" data-action="report-print"><i class="fas fa-print"></i> 인쇄/PDF</button>
+                </div>
             </div>
         </div>`;
 
+        // hidden period nav state
+        const navState = `<span id="report-nav-state" data-prev="${prevKey}" data-next="${nextKey}" style="display:none"></span>`;
+
         if (!student) {
-            document.getElementById('content-area').innerHTML = controlBar +
+            document.getElementById('content-area').innerHTML = controlBar + navState +
                 '<div class="empty-state" style="padding:60px"><i class="fas fa-user-slash"></i><h3>학생을 선택해주세요</h3></div>';
             this._bindReportEvents();
             return;
         }
 
         // ── 데이터 집계 ──────────────────────────────
-
-        // 1. 학습 계획 & 진도 (해당 월에 active인 계획)
-        const plans = DataStore.getStudentPlans(student.id).filter(p =>
-            (!p.endDate || p.endDate >= `${reportYM}-01`) &&
-            (!p.startDate || p.startDate <= `${reportYM}-31`)
-        );
-        const monthProgress = DataStore.getStudentProgress(student.id)
-            .filter(pr => (pr.date || '').startsWith(reportYM));
+        const allProgress = DataStore.getStudentProgress(student.id);
+        const periodProgress = allProgress.filter(pr => dateFilter(pr.date || ''));
         const progressByPlan = {};
-        monthProgress.forEach(pr => {
+        periodProgress.forEach(pr => {
             progressByPlan[pr.planId] = (progressByPlan[pr.planId] || 0) + (pr.amount || 0);
         });
 
-        // 2. 출석
-        const attStats = DataStore.getAttendanceStats(student.id, reportYM);
+        // 학습 계획 (기간과 겹치는 것)
+        let dateRangeStart, dateRangeEnd;
+        if (period === 'daily') { dateRangeStart = reportDay; dateRangeEnd = reportDay; }
+        else if (period === 'weekly') { dateRangeStart = reportWeek; dateRangeEnd = this._addDays(reportWeek, 6); }
+        else { dateRangeStart = `${reportYM}-01`; dateRangeEnd = `${reportYM}-31`; }
 
-        // 3. 숙제
+        const plans = DataStore.getStudentPlans(student.id).filter(p =>
+            (!p.endDate || p.endDate >= dateRangeStart) &&
+            (!p.startDate || p.startDate <= dateRangeEnd)
+        );
+
+        // 출석
+        const periodAtt = DataStore.getAttendances()
+            .filter(a => a.studentId === student.id && dateFilter(a.date || ''));
+        const attCounts = { '출석':0, '결석':0, '지각':0, '조퇴':0 };
+        periodAtt.forEach(a => { if (attCounts[a.status] !== undefined) attCounts[a.status]++; });
+        const attTotal = periodAtt.length;
+        const attRate = attTotal > 0 ? Math.round((attCounts['출석'] / attTotal) * 100) : null;
+
+        // 숙제
         const hwAll = DataStore.getHomeworkForStudent(student.id).filter(h =>
-            !h.dueDate || h.dueDate.startsWith(reportYM) ||
-            (h.createdAt && h.createdAt.startsWith(reportYM))
+            dateFilter(h.dueDate || h.createdAt || '')
         );
         const hwDone = hwAll.filter(h => DataStore.isHomeworkCompletedBy(h, student.id)).length;
 
-        // 4. 성적 (해당 월)
-        const monthGrades = DataStore.getStudentGrades(student.id).filter(g =>
-            g.examDate && g.examDate.startsWith(reportYM)
+        // 성적
+        const periodGrades = DataStore.getStudentGrades(student.id).filter(g =>
+            g.examDate && dateFilter(g.examDate)
         );
 
-        // 5. 코멘트 (해당 월, 본인 열람 가능한 것)
-        const monthComments = DataStore.getStudentComments(student.id)
-            .filter(c => (c.createdAt || '').startsWith(reportYM) && Permissions.canViewComment(c));
+        // 코멘트
+        const periodComments = DataStore.getStudentComments(student.id)
+            .filter(c => dateFilter((c.createdAt || '').slice(0,10)) && Permissions.canViewComment(c));
 
-        // 6. 자기 진도 일지 (해당 월)
+        // 자기 진도 일지
         const selfJournals = DataStore.getSelfJournals(student.id)
-            .filter(j => (j.date || '').startsWith(reportYM));
+            .filter(j => dateFilter(j.date || ''));
 
-        // ── 렌더링 ────────────────────────────────────
-
-        // 학습 계획 섹션
-        const planSection = plans.length === 0
-            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 진행 중인 학습 계획이 없습니다.</div>'
-            : plans.map(p => {
-                const total = p.totalUnits || 0;
-                const completed = p.completedUnits || 0;
-                const rate = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
-                const monthAmt = progressByPlan[p.id] || 0;
-                const barColor = rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warning)' : 'var(--primary)';
-                return `
-                <div class="report-plan-row">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px">
-                        <span style="font-weight:600">${this.escapeHtml(p.subject)} <span style="font-weight:400;color:var(--gray-500)">— ${this.escapeHtml(p.textbook || '')}</span></span>
-                        <span style="font-size:0.82rem;color:var(--gray-500)">이번 달 +${monthAmt}${this.escapeHtml(p.unitLabel || '')} &nbsp; 누적 ${completed}/${total}</span>
-                    </div>
-                    <div style="background:var(--gray-100);border-radius:6px;height:10px;overflow:hidden">
-                        <div style="width:${rate}%;background:${barColor};height:100%;border-radius:6px;transition:width 0.5s"></div>
-                    </div>
-                    <div style="text-align:right;font-size:0.78rem;margin-top:2px;color:${barColor};font-weight:600">${rate}%</div>
-                </div>`;
-            }).join('');
-
-        // 성적 섹션
-        const gradeSection = monthGrades.length === 0
-            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 시험 기록이 없습니다.</div>'
-            : monthGrades.map(g => {
-                const subRows = (g.subjects || []).map(s =>
-                    `<span class="report-subject-chip">
-                        ${this.escapeHtml(s.subject)}&nbsp;
-                        <strong class="grade-score ${s.score >= 90 ? 'high' : s.score >= 70 ? 'mid' : 'low'}">${s.score}</strong>
-                        ${s.grade ? `<span class="grade-badge grade-${s.grade}" style="font-size:0.68rem">${s.grade}등급</span>` : ''}
-                     </span>`
-                ).join('');
-                return `<div style="margin-bottom:10px">
-                    <div style="font-weight:600;margin-bottom:4px">${this.escapeHtml(g.examName || g.examType || '')} <span style="font-size:0.78rem;color:var(--gray-400)">${g.examDate}</span></div>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px">${subRows}</div>
-                    ${g.totalAvg ? `<div style="margin-top:4px;font-size:0.82rem;color:var(--gray-500)">평균 <strong>${g.totalAvg}</strong>${g.totalRank ? ` / 석차 ${this.escapeHtml(g.totalRank)}` : ''}</div>` : ''}
-                </div>`;
-            }).join('');
-
-        // 코멘트 섹션
-        const commentSection = monthComments.length === 0
-            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 코멘트가 없습니다.</div>'
-            : monthComments.map(c => `
-            <div style="padding:10px 0;border-bottom:1px solid var(--gray-100)">
-                <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
-                    <span style="font-weight:600;font-size:0.88rem">${this.escapeHtml(c.author)}</span>
-                    ${this.getRoleBadge(c.authorRole)}
-                    <span style="font-size:0.75rem;color:var(--gray-400)">${this.formatDateTime(c.createdAt)}</span>
-                </div>
-                <div style="font-size:0.88rem;color:var(--gray-700);white-space:pre-line">${this.escapeHtml(c.content)}</div>
-            </div>`).join('');
-
-        // 자기 진도 일지 요약
-        const journalSection = selfJournals.length === 0
-            ? '<div style="color:var(--gray-300);padding:12px 0">이번 달 자기 진도 기록이 없습니다.</div>'
-            : `<div style="font-size:0.85rem;color:var(--gray-600)">총 <strong>${selfJournals.length}회</strong> 기록</div>
-               <div style="margin-top:8px;max-height:140px;overflow-y:auto">
-               ${selfJournals.map(j => `
-               <div style="padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.83rem">
-                   <span style="color:var(--gray-400);margin-right:8px">${j.date}</span>
-                   <span>${this.escapeHtml(j.note || '')}</span>
-               </div>`).join('')}
-               </div>`;
-
-        // 요약 통계 카드
-        const totalMonthProgress = Object.values(progressByPlan).reduce((a, b) => a + b, 0);
+        // ── 요약 통계 카드 ─────────────────────────────
+        const totalPeriodProgress = Object.values(progressByPlan).reduce((a, b) => a + b, 0);
         const avgPlanRate = plans.length > 0
             ? Math.round(plans.reduce((sum, p) => sum + (p.totalUnits > 0 ? Math.min(100, Math.round((p.completedUnits / p.totalUnits) * 100)) : 0), 0) / plans.length)
             : null;
+        const periodLabel2 = { daily: '오늘', weekly: '이번 주', monthly: '이번 달' }[period];
 
         const summaryCards = `
         <div class="report-summary-grid">
             <div class="report-stat-card">
                 <div class="report-stat-icon" style="background:#EEF2FF;color:#4F46E5"><i class="fas fa-book-open"></i></div>
                 <div class="report-stat-body">
-                    <div class="report-stat-label">이번 달 진도량</div>
-                    <div class="report-stat-value">${totalMonthProgress}<span style="font-size:0.8rem;font-weight:400"> 회</span></div>
+                    <div class="report-stat-label">${periodLabel2} 진도량</div>
+                    <div class="report-stat-value">${totalPeriodProgress}<span style="font-size:0.8rem;font-weight:400"> 회</span></div>
                 </div>
             </div>
             <div class="report-stat-card">
@@ -5469,7 +5503,7 @@ const App = {
                 <div class="report-stat-icon" style="background:#FFF7ED;color:#EA580C"><i class="fas fa-calendar-check"></i></div>
                 <div class="report-stat-body">
                     <div class="report-stat-label">출석률</div>
-                    <div class="report-stat-value">${attStats.rate !== null ? attStats.rate + '%' : '-'}</div>
+                    <div class="report-stat-value">${attRate !== null ? attRate + '%' : '-'}</div>
                 </div>
             </div>
             <div class="report-stat-card">
@@ -5481,7 +5515,66 @@ const App = {
             </div>
         </div>`;
 
-        const html = controlBar + `
+        // ── 섹션 렌더링 ───────────────────────────────
+        const noData = label => `<div style="color:var(--gray-300);padding:12px 0">${label}</div>`;
+
+        const planSection = plans.length === 0 ? noData('진행 중인 학습 계획이 없습니다.') :
+            plans.map(p => {
+                const total = p.totalUnits || 0;
+                const completed = p.completedUnits || 0;
+                const rate = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+                const periodAmt = progressByPlan[p.id] || 0;
+                const barColor = rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warning)' : 'var(--primary)';
+                return `<div class="report-plan-row">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px">
+                        <span style="font-weight:600">${this.escapeHtml(p.subject)} <span style="font-weight:400;color:var(--gray-500)">— ${this.escapeHtml(p.textbook || '')}</span></span>
+                        <span style="font-size:0.82rem;color:var(--gray-500)">${periodLabel2} +${periodAmt}${this.escapeHtml(p.unitLabel || '')} &nbsp; 누적 ${completed}/${total}</span>
+                    </div>
+                    <div style="background:var(--gray-100);border-radius:6px;height:10px;overflow:hidden">
+                        <div style="width:${rate}%;background:${barColor};height:100%;border-radius:6px;transition:width 0.5s"></div>
+                    </div>
+                    <div style="text-align:right;font-size:0.78rem;margin-top:2px;color:${barColor};font-weight:600">${rate}%</div>
+                </div>`;
+            }).join('');
+
+        const gradeSection = periodGrades.length === 0 ? noData('해당 기간 시험 기록이 없습니다.') :
+            periodGrades.map(g => {
+                const subRows = (g.subjects || []).map(s =>
+                    `<span class="report-subject-chip">
+                        ${this.escapeHtml(s.subject)}&nbsp;
+                        <strong class="grade-score ${s.score >= 90 ? 'high' : s.score >= 70 ? 'mid' : 'low'}">${s.score}</strong>
+                        ${s.grade ? `<span class="grade-badge grade-${s.grade}" style="font-size:0.68rem">${s.grade}등급</span>` : ''}
+                    </span>`
+                ).join('');
+                return `<div style="margin-bottom:10px">
+                    <div style="font-weight:600;margin-bottom:4px">${this.escapeHtml(g.examName || g.examType || '')} <span style="font-size:0.78rem;color:var(--gray-400)">${g.examDate}</span></div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px">${subRows}</div>
+                    ${g.totalAvg ? `<div style="margin-top:4px;font-size:0.82rem;color:var(--gray-500)">평균 <strong>${g.totalAvg}</strong>${g.totalRank ? ` / 석차 ${this.escapeHtml(g.totalRank)}` : ''}</div>` : ''}
+                </div>`;
+            }).join('');
+
+        const commentSection = periodComments.length === 0 ? noData('해당 기간 코멘트가 없습니다.') :
+            periodComments.map(c => `
+            <div style="padding:10px 0;border-bottom:1px solid var(--gray-100)">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+                    <span style="font-weight:600;font-size:0.88rem">${this.escapeHtml(c.author)}</span>
+                    ${this.getRoleBadge(c.authorRole)}
+                    <span style="font-size:0.75rem;color:var(--gray-400)">${this.formatDateTime(c.createdAt)}</span>
+                </div>
+                <div style="font-size:0.88rem;color:var(--gray-700);white-space:pre-line">${this.escapeHtml(c.content)}</div>
+            </div>`).join('');
+
+        const journalSection = selfJournals.length === 0 ? noData('해당 기간 자기 진도 기록이 없습니다.') :
+            `<div style="font-size:0.85rem;color:var(--gray-600)">총 <strong>${selfJournals.length}회</strong> 기록</div>
+             <div style="margin-top:8px;max-height:160px;overflow-y:auto">
+             ${selfJournals.map(j => `
+             <div style="padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.83rem">
+                 <span style="color:var(--gray-400);margin-right:8px">${j.date}</span>
+                 <span>${this.escapeHtml(j.note || '')}</span>
+             </div>`).join('')}
+             </div>`;
+
+        const html = controlBar + navState + `
         <!-- 학생 헤더 -->
         <div class="card" style="margin-bottom:16px">
             <div class="card-body" style="padding:20px 24px">
@@ -5490,83 +5583,75 @@ const App = {
                         <div style="font-size:1.3rem;font-weight:700;color:var(--gray-800)">${this.escapeHtml(student.name)}</div>
                         <div style="font-size:0.88rem;color:var(--gray-500);margin-top:2px">${this.escapeHtml(student.grade || '')} · ${this.escapeHtml(student.school || '')}</div>
                     </div>
-                    <div style="font-size:1.1rem;font-weight:600;color:var(--primary)">${year}년 ${month}월 학습 리포트</div>
+                    <div style="font-size:1.1rem;font-weight:600;color:var(--primary)">${periodTitle} ${periodLabel} 학습 리포트</div>
                 </div>
             </div>
         </div>
 
-        <!-- 요약 통계 -->
         ${summaryCards}
 
         <div class="report-grid">
-            <!-- 학습 계획 진행 -->
             <div class="card">
                 <div class="card-header"><h2><i class="fas fa-book-open" style="color:var(--primary)"></i> 학습 계획 진행 현황 (${plans.length}개)</h2></div>
                 <div class="card-body">${planSection}</div>
             </div>
 
-            <!-- 출석 현황 -->
             <div class="card">
                 <div class="card-header"><h2><i class="fas fa-calendar-check" style="color:var(--success)"></i> 출석 현황</h2></div>
                 <div class="card-body">
                     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;text-align:center;margin-bottom:12px">
-                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--success)">${attStats['출석']}</div><div style="font-size:0.78rem;color:var(--gray-400)">출석</div></div>
-                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--danger)">${attStats['결석']}</div><div style="font-size:0.78rem;color:var(--gray-400)">결석</div></div>
-                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--warning)">${attStats['지각']}</div><div style="font-size:0.78rem;color:var(--gray-400)">지각</div></div>
-                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--info)">${attStats['조퇴']}</div><div style="font-size:0.78rem;color:var(--gray-400)">조퇴</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--success)">${attCounts['출석']}</div><div style="font-size:0.78rem;color:var(--gray-400)">출석</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--danger)">${attCounts['결석']}</div><div style="font-size:0.78rem;color:var(--gray-400)">결석</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--warning)">${attCounts['지각']}</div><div style="font-size:0.78rem;color:var(--gray-400)">지각</div></div>
+                        <div><div style="font-size:1.4rem;font-weight:700;color:var(--info)">${attCounts['조퇴']}</div><div style="font-size:0.78rem;color:var(--gray-400)">조퇴</div></div>
                     </div>
-                    ${attStats.rate !== null ? `
+                    ${attRate !== null ? `
                     <div style="background:var(--gray-100);border-radius:8px;height:12px;overflow:hidden;margin-bottom:4px">
-                        <div style="width:${attStats.rate}%;background:${attStats.rate >= 90 ? 'var(--success)' : attStats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'};height:100%;border-radius:8px"></div>
+                        <div style="width:${attRate}%;background:${attRate >= 90 ? 'var(--success)' : attRate >= 70 ? 'var(--warning)' : 'var(--danger)'};height:100%;border-radius:8px"></div>
                     </div>
-                    <div style="text-align:right;font-size:0.82rem;font-weight:700;color:${attStats.rate >= 90 ? 'var(--success)' : attStats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'}">출석률 ${attStats.rate}%</div>
-                    ` : '<div style="color:var(--gray-300);padding:12px 0">출석 데이터가 없습니다.</div>'}
+                    <div style="text-align:right;font-size:0.82rem;font-weight:700;color:${attRate >= 90 ? 'var(--success)' : attRate >= 70 ? 'var(--warning)' : 'var(--danger)'}">출석률 ${attRate}%</div>
+                    ` : noData('출석 데이터가 없습니다.')}
                 </div>
             </div>
 
-            <!-- 숙제 완료 현황 -->
             <div class="card">
                 <div class="card-header"><h2><i class="fas fa-tasks" style="color:var(--warning)"></i> 숙제 완료 현황 (${hwAll.length}개)</h2></div>
                 <div class="card-body">
-                    ${hwAll.length === 0
-                        ? '<div style="color:var(--gray-300)">이번 달 숙제가 없습니다.</div>'
-                        : `<div style="display:flex;align-items:center;gap:16px;margin-bottom:10px">
-                            <div style="font-size:2rem;font-weight:700;color:var(--success)">${hwDone}</div>
-                            <div style="font-size:1rem;color:var(--gray-400)">/ ${hwAll.length}</div>
-                            <div style="flex:1">
-                                <div style="background:var(--gray-100);border-radius:6px;height:10px;overflow:hidden">
-                                    <div style="width:${Math.round((hwDone/hwAll.length)*100)}%;background:var(--success);height:100%;border-radius:6px"></div>
-                                </div>
-                                <div style="text-align:right;font-size:0.78rem;color:var(--success);font-weight:700;margin-top:2px">${Math.round((hwDone/hwAll.length)*100)}%</div>
+                    ${hwAll.length === 0 ? noData('해당 기간 숙제가 없습니다.') :
+                    `<div style="display:flex;align-items:center;gap:16px;margin-bottom:10px">
+                        <div style="font-size:2rem;font-weight:700;color:var(--success)">${hwDone}</div>
+                        <div style="font-size:1rem;color:var(--gray-400)">/ ${hwAll.length}</div>
+                        <div style="flex:1">
+                            <div style="background:var(--gray-100);border-radius:6px;height:10px;overflow:hidden">
+                                <div style="width:${Math.round((hwDone/hwAll.length)*100)}%;background:var(--success);height:100%;border-radius:6px"></div>
                             </div>
-                           </div>
-                           <div style="font-size:0.82rem">
-                           ${hwAll.map(h => `
-                           <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--gray-100)">
-                               <i class="fas ${DataStore.isHomeworkCompletedBy(h, student.id) ? 'fa-check-circle' : 'fa-circle'}" style="color:${DataStore.isHomeworkCompletedBy(h, student.id) ? 'var(--success)' : 'var(--gray-200)'}"></i>
-                               <span style="${DataStore.isHomeworkCompletedBy(h, student.id) ? 'text-decoration:line-through;color:var(--gray-400)' : ''}">${this.escapeHtml(h.title)}</span>
-                               ${h.dueDate ? `<span style="margin-left:auto;font-size:0.75rem;color:var(--gray-400)">${h.dueDate}</span>` : ''}
-                           </div>`).join('')}
-                           </div>`}
+                            <div style="text-align:right;font-size:0.78rem;color:var(--success);font-weight:700;margin-top:2px">${Math.round((hwDone/hwAll.length)*100)}%</div>
+                        </div>
+                    </div>
+                    <div style="font-size:0.82rem">
+                    ${hwAll.map(h => `
+                    <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--gray-100)">
+                        <i class="fas ${DataStore.isHomeworkCompletedBy(h, student.id) ? 'fa-check-circle' : 'fa-circle'}" style="color:${DataStore.isHomeworkCompletedBy(h, student.id) ? 'var(--success)' : 'var(--gray-200)'}"></i>
+                        <span style="${DataStore.isHomeworkCompletedBy(h, student.id) ? 'text-decoration:line-through;color:var(--gray-400)' : ''}">${this.escapeHtml(h.title)}</span>
+                        ${h.dueDate ? `<span style="margin-left:auto;font-size:0.75rem;color:var(--gray-400)">${h.dueDate}</span>` : ''}
+                    </div>`).join('')}
+                    </div>`}
                 </div>
             </div>
 
-            <!-- 시험 성적 -->
             <div class="card">
-                <div class="card-header"><h2><i class="fas fa-trophy" style="color:var(--warning)"></i> 이번 달 시험 성적</h2></div>
+                <div class="card-header"><h2><i class="fas fa-trophy" style="color:var(--warning)"></i> 시험 성적</h2></div>
                 <div class="card-body">${gradeSection}</div>
             </div>
 
-            <!-- 자기 진도 일지 -->
             <div class="card">
                 <div class="card-header"><h2><i class="fas fa-pencil-alt" style="color:var(--info)"></i> 자기 진도 일지 (${selfJournals.length}회)</h2></div>
                 <div class="card-body">${journalSection}</div>
             </div>
 
-            <!-- 코멘트 -->
             <div class="card">
-                <div class="card-header"><h2><i class="fas fa-comments" style="color:var(--primary)"></i> 코멘트 (${monthComments.length}개)</h2></div>
-                <div class="card-body" style="padding:${monthComments.length ? '8px 20px' : ''}">${commentSection}</div>
+                <div class="card-header"><h2><i class="fas fa-comments" style="color:var(--primary)"></i> 코멘트 (${periodComments.length}개)</h2></div>
+                <div class="card-body" style="padding:${periodComments.length ? '8px 20px' : ''}">${commentSection}</div>
             </div>
         </div>`;
 
@@ -5574,13 +5659,96 @@ const App = {
         this._bindReportEvents();
     },
 
+    _getWeekStart(dateStr) {
+        const d = new Date(dateStr);
+        const day = d.getDay(); // 0=일
+        const diff = day === 0 ? -6 : 1 - day; // 월요일 기준
+        d.setDate(d.getDate() + diff);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    },
+
+    _addDays(dateStr, n) {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() + n);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    },
+
     _bindReportEvents() {
         const sel = document.getElementById('report-student-select');
         if (sel) {
             sel.addEventListener('change', () => {
                 this._reportStudentId = sel.value;
-                this.renderReport(sel.value, this._reportYM);
+                this.renderReport(sel.value);
             });
+        }
+    },
+
+    async _shareReport() {
+        const studentId = this._reportStudentId;
+        const student = studentId ? DataStore.getStudent(studentId) : null;
+        if (!student) { this.toast('학생을 선택해주세요.', 'warning'); return; }
+
+        const period = this._reportPeriod || 'monthly';
+        const periodLabel = { daily: '일간', weekly: '주간', monthly: '월간' }[period];
+        let periodTitle;
+        const today = this.getLocalDateStr();
+        if (period === 'daily') {
+            const d = this._reportDay || today;
+            const [y,m,dd] = d.split('-');
+            periodTitle = `${y}년 ${m}월 ${dd}일`;
+        } else if (period === 'weekly') {
+            const ws = this._reportWeek || this._getWeekStart(today);
+            const we = this._addDays(ws, 6);
+            const [wy,wm,wd] = ws.split('-');
+            const [,em,ed] = we.split('-');
+            periodTitle = `${wy}년 ${wm}월 ${wd}일~${em}월 ${ed}일`;
+        } else {
+            const ym = this._reportYM || today.slice(0,7);
+            const [y,m] = ym.split('-');
+            periodTitle = `${y}년 ${m}월`;
+        }
+
+        const msgContent = `📊 [${periodTitle} ${periodLabel} 학습 리포트]\n${this.escapeHtml(student.name)} 학생의 리포트가 공유되었습니다.\n앱에서 [월간 리포트] 메뉴를 확인해주세요.`;
+        const author = this.currentUser ? this.currentUser.name : '선생님';
+        const authorRole = this.currentUser ? this.currentUser.role : 'teacher';
+
+        // 학생 본인 메시지 전송
+        const studentAccount = DataStore.getTeachers().find(t => t.role === 'student' && t.studentId === studentId);
+        const parentAccount = DataStore.getTeachers().find(t => t.role === 'parent' && t.studentId === studentId);
+
+        let sent = 0;
+        try {
+            if (studentAccount) {
+                await DataStore.addMessage({
+                    author, authorRole,
+                    studentId,
+                    title: `${periodTitle} ${periodLabel} 학습 리포트`,
+                    content: msgContent,
+                    pinned: false,
+                    channel: 'student',
+                    recipientId: studentAccount.id
+                });
+                sent++;
+            }
+            if (parentAccount) {
+                await DataStore.addMessage({
+                    author, authorRole,
+                    studentId,
+                    title: `${periodTitle} ${periodLabel} 학습 리포트`,
+                    content: msgContent,
+                    pinned: false,
+                    channel: 'student',
+                    recipientId: parentAccount.id
+                });
+                sent++;
+            }
+            if (sent === 0) {
+                this.toast('연결된 학생/학부모 계정이 없습니다.', 'warning');
+            } else {
+                this.toast(`학생/학부모 ${sent}명에게 리포트를 공유했습니다.`, 'success');
+            }
+        } catch (e) {
+            this.toast('공유 중 오류가 발생했습니다.', 'error');
         }
     },
 

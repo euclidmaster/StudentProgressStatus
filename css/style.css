@@ -2678,6 +2678,33 @@ th.sortable i {
 }
 .report-plan-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 
+/* ===== 리포트 기간 탭 ===== */
+.report-period-tabs {
+    display: flex;
+    background: var(--gray-100);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 2px;
+}
+.report-period-tab {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--gray-500);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.report-period-tab:hover { color: var(--gray-700); }
+.report-period-tab.active {
+    background: #fff;
+    color: var(--primary);
+    font-weight: 700;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
 .report-subject-chip {
     display: inline-flex;
     align-items: center;
