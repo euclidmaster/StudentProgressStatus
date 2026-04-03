@@ -3094,7 +3094,7 @@ const App = {
                 data.totalUnits = parseInt(form.totalUnits.value);
                 data.unitLabel = form.unitLabel.value.trim() || '단위';
                 data.completedUnits = parseInt(form.completedUnits.value) || 0;
-                data.checklistItems = null;
+                delete data.checklistItems;
                 if (!data.totalUnits || data.totalUnits < 1) {
                     this.toast('주간 학습량을 입력해주세요.', 'error');
                     return;
