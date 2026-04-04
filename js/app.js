@@ -6033,7 +6033,7 @@ const App = {
             <div class="card-body" style="padding:20px 24px">
                 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
                     <div>
-                        <div style="font-size:1.3rem;font-weight:700;color:var(--gray-800)">${this.escapeHtml(student.name)}</div>
+                        <div style="font-size:1.3rem;font-weight:700;color:var(--gray-800);cursor:pointer;text-decoration:underline dotted" onclick="App.navigate('student-detail',{studentId:'${student.id}'})" title="학생 상세 보기">${this.escapeHtml(student.name)}</div>
                         <div style="font-size:0.88rem;color:var(--gray-500);margin-top:2px">${this.escapeHtml(student.grade || '')} · ${this.escapeHtml(student.school || '')}</div>
                     </div>
                     <div style="font-size:1.1rem;font-weight:600;color:var(--primary)">${periodTitle} ${periodLabel} 학습 리포트</div>
