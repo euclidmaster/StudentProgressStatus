@@ -2003,10 +2003,19 @@ const App = {
                     <div class="form-row">
                         <div class="form-group">
                             <label>과목 선택 <span class="required">*</span></label>
-                            <select class="form-control" id="bulk-subject" onchange="App.loadBulkProgressTable()">
-                                <option value="">과목을 선택하세요</option>
-                                ${subjects.map(s => `<option value="${this.escapeHtml(s)}">${this.escapeHtml(s)}</option>`).join('')}
-                            </select>
+                            <div style="display:flex;gap:6px;align-items:center">
+                                <input type="text" class="form-control" id="bulk-subject" list="bulk-subject-list"
+                                    placeholder="과목 선택 또는 직접 입력"
+                                    onchange="App.loadBulkProgressTable()"
+                                    onkeydown="if(event.key==='Enter'){event.preventDefault();App.loadBulkProgressTable();}"
+                                    style="max-width:220px">
+                                <datalist id="bulk-subject-list">
+                                    ${subjects.map(s => `<option value="${this.escapeHtml(s)}">`).join('')}
+                                </datalist>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="App.loadBulkProgressTable()" title="조회">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>수업 날짜 <span class="required">*</span></label>
