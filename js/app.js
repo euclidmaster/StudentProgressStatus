@@ -6230,7 +6230,8 @@ const App = {
             if (controlCard) controlCard.style.display = 'none';
             if (navState) navState.style.display = 'none';
 
-            const canvas = await html2canvas(contentArea, {
+            // html2canvas를 Promise로 시작
+            const canvasPromise = html2canvas(contentArea, {
                 scale: 2,
                 useCORS: true,
                 backgroundColor: '#F3F4F6',
@@ -6243,6 +6244,19 @@ const App = {
                 }
             });
 
+            // 클립보드 write를 클릭 직후(사용자 제스처 컨텍스트 내)에 Promise로 등록
+            // → ClipboardItem이 Promise를 받아 나중에 resolve되면 자동으로 복사됨
+            let clipboardPromise = null;
+            if (navigator.clipboard && window.ClipboardItem) {
+                const blobPromise = canvasPromise.then(c => new Promise(r => c.toBlob(r, 'image/png')));
+                try {
+                    clipboardPromise = navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': blobPromise })
+                    ]);
+                } catch (_) {}
+            }
+
+            const canvas = await canvasPromise;
             if (controlCard) controlCard.style.display = '';
 
             // 파일명: 학생이름_날짜범위_일간|주간|월간.png
@@ -6263,7 +6277,23 @@ const App = {
             const studentName = student ? student.name : '학생';
             const fileName = `${studentName}_${dateStr}_${periodLabel}.png`;
 
-            await this._downloadAndCopyCanvas(canvas, fileName, studentName);
+            // 다운로드
+            const link = document.createElement('a');
+            link.download = fileName;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+
+            // 클립보드 결과 확인
+            let copied = false;
+            if (clipboardPromise) {
+                try { await clipboardPromise; copied = true; } catch (_) {}
+            }
+
+            if (copied) {
+                this.toast(`💾 ${fileName} 저장 완료 | 클립보드에도 복사됐습니다 — 카카오톡·문자에 Ctrl+V로 바로 붙여넣기하세요.`, 'success');
+            } else {
+                this.toast(`💾 ${fileName} 저장 완료`, 'success');
+            }
             restoreBtn();
         } catch (err) {
             if (controlCard) controlCard.style.display = '';
@@ -6272,36 +6302,6 @@ const App = {
         }
     },
 
-    async _downloadAndCopyCanvas(canvas, fileName, studentName) {
-        // 1. 다운로드 (항상 실행)
-        const link = document.createElement('a');
-        link.download = fileName;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-
-        // 2. 클립보드 복사 (동시 실행)
-        let copied = false;
-        if (navigator.clipboard && window.ClipboardItem) {
-            try {
-                await new Promise((resolve, reject) => {
-                    canvas.toBlob(async (blob) => {
-                        if (!blob) { reject(new Error('blob null')); return; }
-                        try {
-                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-                            copied = true;
-                            resolve();
-                        } catch (e) { reject(e); }
-                    }, 'image/png');
-                });
-            } catch (_) {}
-        }
-
-        if (copied) {
-            this.toast(`💾 ${fileName} 저장 완료 | 클립보드에도 복사됐습니다 — 카카오톡·문자에 Ctrl+V로 바로 붙여넣기하세요.`, 'success');
-        } else {
-            this.toast(`💾 ${fileName} 저장 완료`, 'success');
-        }
-    },
 
     // =========================================
     //  VIEW: ATTENDANCE (출석 관리 - 선생/원장)
