@@ -2955,3 +2955,137 @@ th.sortable i {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* =========================================
+   BULK PROGRESS — 상세 카드 레이아웃
+   ========================================= */
+.bulk-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+}
+.bulk-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: box-shadow 0.15s, opacity 0.15s;
+}
+.bulk-card:hover { box-shadow: 0 4px 16px rgba(99,102,241,0.10); }
+.bulk-card-skipped {
+    opacity: 0.45;
+    border-color: var(--gray-200);
+    pointer-events: none;
+}
+.bulk-card-skipped .bulk-skip-toggle { pointer-events: all; }
+
+.bulk-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.bulk-card-student {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.bulk-card-name {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--gray-800);
+}
+
+.bulk-skip-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--gray-500);
+    user-select: none;
+    white-space: nowrap;
+}
+.bulk-skip-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--danger);
+    cursor: pointer;
+}
+
+.bulk-card-progress {
+    background: var(--gray-50);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.bulk-card-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bulk-card-range {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+.bulk-card-range .form-group {
+    flex: 1;
+}
+.bulk-range-arrow {
+    color: var(--gray-400);
+    padding-bottom: 10px;
+    font-size: 0.85rem;
+}
+.bulk-amount-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 8px;
+    min-width: 44px;
+}
+.bulk-amount-label {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--success);
+}
+
+.bulk-understanding-group {
+    display: flex;
+    gap: 6px;
+}
+.bulk-und-btn {
+    flex: 1;
+    padding: 6px 4px;
+    border: 1.5px solid var(--gray-200);
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--gray-600);
+    transition: all 0.15s;
+    text-align: center;
+}
+.bulk-und-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light, #eef2ff);
+}
+.bulk-und-btn.active[data-level="상"] {
+    background: #dcfce7; border-color: var(--success); color: #166534; font-weight: 600;
+}
+.bulk-und-btn.active[data-level="중"] {
+    background: #fef9c3; border-color: #ca8a04; color: #713f12; font-weight: 600;
+}
+.bulk-und-btn.active[data-level="하"] {
+    background: #fee2e2; border-color: var(--danger); color: #991b1b; font-weight: 600;
+}
+
+@media (max-width: 600px) {
+    .bulk-cards-grid { grid-template-columns: 1fr; }
+}

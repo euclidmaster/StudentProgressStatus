@@ -1921,15 +1921,22 @@ const App = {
                     <div class="card-body" style="padding:0;max-height:500px;overflow-y:auto">
                         ${allProgress.length === 0 ? '<div class="empty-state"><i class="fas fa-clipboard-list"></i><h3>진도 기록이 없습니다</h3></div>' :
                             `<table>
-                                <thead><tr><th>날짜</th><th>학생</th><th>과목</th><th>진행량</th><th>메모</th></tr></thead>
+                                <thead><tr><th>날짜</th><th>학생</th><th>과목</th><th>범위</th><th>이해도</th><th>메모</th></tr></thead>
                                 <tbody>${allProgress.map(p => {
                                     const student = DataStore.getStudent(p.studentId);
                                     const plan = DataStore.getPlan(p.planId);
+                                    const unitLabel = plan ? this.escapeHtml(plan.unitLabel) : '';
+                                    const rangeHtml = (p.startUnit != null && p.endUnit != null)
+                                        ? `<span style="font-size:0.82rem">${p.startUnit} → ${p.endUnit} ${unitLabel}</span><br><small style="color:var(--gray-400)">+${p.amount} ${unitLabel}</small>`
+                                        : `<strong>${p.amount}</strong> ${unitLabel}`;
+                                    const undMap = { '상': '<span style="color:#166534;font-weight:600">😊 상</span>', '중': '<span style="color:#713f12;font-weight:600">😐 중</span>', '하': '<span style="color:#991b1b;font-weight:600">😕 하</span>' };
+                                    const undHtml = p.understanding ? (undMap[p.understanding] || this.escapeHtml(p.understanding)) : '<span style="color:var(--gray-300)">-</span>';
                                     return `<tr>
                                         <td>${this.formatDate(p.date)}</td>
                                         <td>${student ? `<span class="student-name" data-action="view-student" data-id="${student.id}">${this.escapeHtml(student.name)}</span>` : '-'}</td>
                                         <td>${plan ? this.escapeHtml(plan.subject) : '-'}</td>
-                                        <td><strong>${p.amount}</strong> ${plan ? this.escapeHtml(plan.unitLabel) : ''}</td>
+                                        <td>${rangeHtml}</td>
+                                        <td>${undHtml}</td>
                                         <td style="color:var(--gray-500)">${this.escapeHtml(p.note || '')}</td>
                                     </tr>`;
                                 }).join('')}</tbody>
@@ -2040,56 +2047,151 @@ const App = {
             return;
         }
 
+        const isStudent = this.currentUser?.role === 'student';
+
         container.innerHTML = `
-            <div class="card">
-                <div class="card-header"><h2><i class="fas fa-users"></i> ${this.escapeHtml(subject)} 수강 학생 (${rows.length}명)</h2></div>
-                <div class="card-body no-padding">
-                    <div class="table-wrapper">
-                        <table id="bulk-progress-table">
-                            <thead><tr>${this.currentUser?.role !== 'student' ? '<th>학생</th>' : ''}<th>교재</th><th>현재 진도</th><th>오늘 진행량</th><th>메모</th><th style="text-align:center">건너뜀</th></tr></thead>
-                            <tbody>
-                                ${rows.map((r, idx) => `
-                                <tr data-plan-id="${r.plan.id}" data-student-id="${r.student.id}">
-                                    ${this.currentUser?.role !== 'student' ? `<td><strong>${this.escapeHtml(r.student.name)}</strong><br><small style="color:var(--gray-400)">${this.escapeHtml(r.student.grade)}</small></td>` : ''}
-                                    <td>${this.escapeHtml(r.plan.textbook)}</td>
-                                    <td>
-                                        <div class="progress-bar-container" style="width:80px;display:inline-block;vertical-align:middle;margin-right:6px">
-                                            <div class="progress-bar ${this.getProgressColor(r.pct)}" style="width:${r.pct}%"></div>
-                                        </div>
-                                        <span style="font-size:0.82rem">${r.pct}%</span>
-                                    </td>
-                                    <td><input type="number" class="form-control bulk-amount" min="0" placeholder="0" style="width:80px" data-idx="${idx}"></td>
-                                    <td><input type="text" class="form-control bulk-note" placeholder="메모" data-idx="${idx}"></td>
-                                    <td style="text-align:center"><input type="checkbox" class="bulk-skip" title="건너뜀" data-idx="${idx}"></td>
-                                </tr>`).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h3 style="margin:0;font-size:1rem;color:var(--gray-600)">
+                    <i class="fas fa-users"></i> ${this.escapeHtml(subject)} 수강 학생 <span style="color:var(--primary)">${rows.length}명</span>
+                </h3>
+                <span style="font-size:0.8rem;color:var(--gray-400)"><i class="fas fa-info-circle"></i> 건너뜀 체크 시 해당 학생 저장 제외</span>
+            </div>
+            <div class="bulk-cards-grid" id="bulk-progress-cards">
+                ${rows.map((r, idx) => {
+                    const colorClass = this.getProgressColor(r.pct);
+                    const remaining = r.plan.totalUnits - r.plan.completedUnits;
+                    const endDefault = Math.min(r.plan.completedUnits + 1, r.plan.totalUnits);
+                    return `
+                    <div class="bulk-card" data-plan-id="${r.plan.id}" data-student-id="${r.student.id}" data-start-unit="${r.plan.completedUnits}" data-idx="${idx}">
+                        <div class="bulk-card-header">
+                            <div class="bulk-card-student">
+                                ${!isStudent ? `<span class="bulk-card-name">${this.escapeHtml(r.student.name)}</span>
+                                <span class="badge badge-primary" style="font-size:0.7rem">${this.escapeHtml(r.student.grade)}</span>` : ''}
+                                <span style="font-size:0.8rem;color:var(--gray-500);margin-left:${isStudent ? '0' : '6px'}"><i class="fas fa-book"></i> ${this.escapeHtml(r.plan.textbook)}</span>
+                            </div>
+                            <label class="bulk-skip-toggle" title="건너뜀">
+                                <input type="checkbox" class="bulk-skip" data-idx="${idx}" onchange="App._onBulkSkipToggle(this)">
+                                <span>건너뜀</span>
+                            </label>
+                        </div>
+
+                        <div class="bulk-card-progress">
+                            <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--gray-500);margin-bottom:4px">
+                                <span>현재: <strong>${r.plan.completedUnits}</strong> / ${r.plan.totalUnits} ${this.escapeHtml(r.plan.unitLabel)}</span>
+                                <span>${r.pct}% 완료</span>
+                            </div>
+                            <div class="progress-bar-container" style="height:8px">
+                                <div class="progress-bar ${colorClass}" style="width:${r.pct}%"></div>
+                            </div>
+                            ${remaining > 0 ? `<div style="font-size:0.75rem;color:var(--gray-400);margin-top:3px">남은 학습량: ${remaining} ${this.escapeHtml(r.plan.unitLabel)}</div>` : '<div style="font-size:0.75rem;color:var(--success);margin-top:3px"><i class="fas fa-check-circle"></i> 완료</div>'}
+                        </div>
+
+                        <div class="bulk-card-inputs">
+                            <div class="bulk-card-range">
+                                <div class="form-group" style="margin-bottom:0">
+                                    <label style="font-size:0.78rem">시작 ${this.escapeHtml(r.plan.unitLabel)}</label>
+                                    <input type="number" class="form-control bulk-start" min="0" max="${r.plan.totalUnits}"
+                                        value="${r.plan.completedUnits}" readonly
+                                        style="background:var(--gray-50);text-align:center" data-idx="${idx}">
+                                </div>
+                                <div class="bulk-range-arrow"><i class="fas fa-arrow-right"></i></div>
+                                <div class="form-group" style="margin-bottom:0">
+                                    <label style="font-size:0.78rem">끝 ${this.escapeHtml(r.plan.unitLabel)} <span class="required">*</span></label>
+                                    <input type="number" class="form-control bulk-end" min="${r.plan.completedUnits}" max="${r.plan.totalUnits}"
+                                        placeholder="${endDefault}"
+                                        style="text-align:center" data-idx="${idx}" oninput="App._onBulkEndInput(this)">
+                                </div>
+                                <div class="bulk-amount-display" id="bulk-amount-display-${idx}" style="display:none">
+                                    <span class="bulk-amount-label">+0</span>
+                                    <span style="font-size:0.7rem;color:var(--gray-400)">${this.escapeHtml(r.plan.unitLabel)}</span>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:0">
+                                <label style="font-size:0.78rem">이해도</label>
+                                <div class="bulk-understanding-group" data-idx="${idx}">
+                                    <button type="button" class="bulk-und-btn" data-level="상" onclick="App._onBulkUnderstanding(this)">😊 상</button>
+                                    <button type="button" class="bulk-und-btn" data-level="중" onclick="App._onBulkUnderstanding(this)">😐 중</button>
+                                    <button type="button" class="bulk-und-btn" data-level="하" onclick="App._onBulkUnderstanding(this)">😕 하</button>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:0">
+                                <label style="font-size:0.78rem">메모</label>
+                                <input type="text" class="form-control bulk-note" placeholder="학습 내용, 특이사항 등" data-idx="${idx}">
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('')}
             </div>`;
         saveRow.style.display = 'block';
+    },
+
+    _onBulkEndInput(input) {
+        const idx = input.dataset.idx;
+        const card = input.closest('.bulk-card');
+        const startVal = parseInt(card.dataset.startUnit) || 0;
+        const endVal = parseInt(input.value);
+        const display = document.getElementById(`bulk-amount-display-${idx}`);
+        if (!display) return;
+        if (!isNaN(endVal) && endVal > startVal) {
+            const diff = endVal - startVal;
+            display.style.display = 'flex';
+            display.querySelector('.bulk-amount-label').textContent = `+${diff}`;
+        } else {
+            display.style.display = 'none';
+        }
+    },
+
+    _onBulkUnderstanding(btn) {
+        const group = btn.closest('.bulk-understanding-group');
+        group.querySelectorAll('.bulk-und-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    },
+
+    _onBulkSkipToggle(checkbox) {
+        const card = checkbox.closest('.bulk-card');
+        card.classList.toggle('bulk-card-skipped', checkbox.checked);
     },
 
     async handleBulkProgressSave() {
         const date = document.getElementById('bulk-date').value;
         if (!date) { this.toast('날짜를 선택하세요.', 'error'); return; }
 
-        const rows = document.querySelectorAll('#bulk-progress-table tbody tr');
+        const cards = document.querySelectorAll('#bulk-progress-cards .bulk-card');
         const entries = [];
-        rows.forEach(row => {
-            if (row.querySelector('.bulk-skip').checked) return;
-            const amount = parseInt(row.querySelector('.bulk-amount').value);
-            if (!amount || amount <= 0) return;
+        let skippedCount = 0;
+
+        cards.forEach(card => {
+            const skipChk = card.querySelector('.bulk-skip');
+            if (skipChk && skipChk.checked) { skippedCount++; return; }
+
+            const startUnit = parseInt(card.dataset.startUnit) || 0;
+            const endInput  = card.querySelector('.bulk-end');
+            const endUnit   = parseInt(endInput?.value);
+            if (isNaN(endUnit) || endUnit <= startUnit) return;
+
+            const amount = endUnit - startUnit;
+            const note   = card.querySelector('.bulk-note')?.value.trim() || '';
+            const activeUndBtn = card.querySelector('.bulk-und-btn.active');
+            const understanding = activeUndBtn ? activeUndBtn.dataset.level : '';
+
             entries.push({
-                studentId: row.dataset.studentId,
-                planId:    row.dataset.planId,
+                studentId:     card.dataset.studentId,
+                planId:        card.dataset.planId,
                 amount,
+                startUnit,
+                endUnit,
+                understanding,
                 date,
-                note: row.querySelector('.bulk-note').value.trim()
+                note
             });
         });
 
-        if (entries.length === 0) { this.toast('저장할 진도 데이터가 없습니다.', 'error'); return; }
+        if (entries.length === 0) {
+            this.toast(skippedCount > 0 ? '건너뜀 외 저장할 데이터가 없습니다.' : '끝 단위를 입력한 학생이 없습니다.', 'error');
+            return;
+        }
 
         const btn = document.getElementById('bulk-save-btn');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 저장 중...'; }
@@ -2098,7 +2200,7 @@ const App = {
             for (const entry of entries) {
                 await DataStore.addProgressEntry(entry);
             }
-            this.toast(`${entries.length}건의 진도가 저장되었습니다.`, 'success');
+            this.toast(`${entries.length}건의 진도가 저장되었습니다.${skippedCount ? ` (${skippedCount}명 건너뜀)` : ''}`, 'success');
             this.loadBulkProgressTable();
         } catch(err) {
             this.toast('저장 실패: ' + err.message, 'error');
