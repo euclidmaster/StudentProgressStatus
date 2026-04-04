@@ -3655,8 +3655,7 @@ const App = {
                 try {
                     await DataStore.upsertAttendance(studentId, date, status);
                     this.loadAttBulkDay();
-                    // 통계 테이블 갱신
-                    this.renderAttendance();
+                    this.refreshAttendanceStats();
                 } catch(err) { this.toast('저장 실패: ' + err.message, 'error'); }
                 break;
             }
@@ -6361,40 +6360,8 @@ const App = {
         <!-- 월별 학생 통계 테이블 -->
         <div class="card" style="margin-bottom:16px">
             <div class="card-header"><h2><i class="fas fa-chart-bar"></i> ${year}년 ${month}월 출석 현황</h2></div>
-            <div class="card-body no-padding">
-                ${students.length === 0
-                    ? '<div class="empty-state" style="padding:30px"><p>담당 학생이 없습니다</p></div>'
-                    : `<div class="table-wrapper"><table class="pivot-table">
-                    <thead><tr>
-                        <th style="min-width:80px">학생</th>
-                        <th style="color:var(--success)">출석</th>
-                        <th style="color:var(--danger)">결석</th>
-                        <th style="color:var(--warning)">지각</th>
-                        <th style="color:var(--info)">조퇴</th>
-                        <th>출석률</th>
-                        <th>출석 입력</th>
-                    </tr></thead>
-                    <tbody>
-                        ${statsRows.map(({ s, stats }) => `
-                        <tr>
-                            <td><strong>${this.escapeHtml(s.name)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">${this.escapeHtml(s.grade)}</div></td>
-                            <td style="text-align:center;color:var(--success);font-weight:600">${stats['출석']}</td>
-                            <td style="text-align:center;color:var(--danger);font-weight:600">${stats['결석']}</td>
-                            <td style="text-align:center;color:var(--warning);font-weight:600">${stats['지각']}</td>
-                            <td style="text-align:center;color:var(--info);font-weight:600">${stats['조퇴']}</td>
-                            <td style="text-align:center">
-                                ${stats.rate !== null
-                                    ? `<span style="font-weight:700;color:${stats.rate >= 90 ? 'var(--success)' : stats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'}">${stats.rate}%</span>`
-                                    : '<span style="color:var(--gray-300)">-</span>'}
-                            </td>
-                            <td style="text-align:center">
-                                <button class="btn btn-sm btn-outline" data-action="att-input-student" data-student-id="${s.id}" data-student-name="${this.escapeHtml(s.name)}">
-                                    <i class="fas fa-edit"></i> 입력
-                                </button>
-                            </td>
-                        </tr>`).join('')}
-                    </tbody>
-                </table></div>`}
+            <div class="card-body no-padding" id="att-stats-body">
+                ${this._renderAttStatsBody(students, ym)}
             </div>
         </div>
 
@@ -6414,6 +6381,50 @@ const App = {
         `;
 
         document.getElementById('content-area').innerHTML = html;
+    },
+
+    _renderAttStatsBody(students, ym) {
+        if (students.length === 0) return '<div class="empty-state" style="padding:30px"><p>담당 학생이 없습니다</p></div>';
+        const statsRows = students.map(s => ({ s, stats: DataStore.getAttendanceStats(s.id, ym) }));
+        return `<div class="table-wrapper"><table class="pivot-table">
+            <thead><tr>
+                <th style="min-width:80px">학생</th>
+                <th style="color:var(--success)">출석</th>
+                <th style="color:var(--danger)">결석</th>
+                <th style="color:var(--warning)">지각</th>
+                <th style="color:var(--info)">조퇴</th>
+                <th>출석률</th>
+                <th>출석 입력</th>
+            </tr></thead>
+            <tbody>
+                ${statsRows.map(({ s, stats }) => `
+                <tr>
+                    <td><strong>${this.escapeHtml(s.name)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">${this.escapeHtml(s.grade)}</div></td>
+                    <td style="text-align:center;color:var(--success);font-weight:600">${stats['출석']}</td>
+                    <td style="text-align:center;color:var(--danger);font-weight:600">${stats['결석']}</td>
+                    <td style="text-align:center;color:var(--warning);font-weight:600">${stats['지각']}</td>
+                    <td style="text-align:center;color:var(--info);font-weight:600">${stats['조퇴']}</td>
+                    <td style="text-align:center">
+                        ${stats.rate !== null
+                            ? `<span style="font-weight:700;color:${stats.rate >= 90 ? 'var(--success)' : stats.rate >= 70 ? 'var(--warning)' : 'var(--danger)'}">${stats.rate}%</span>`
+                            : '<span style="color:var(--gray-300)">-</span>'}
+                    </td>
+                    <td style="text-align:center">
+                        <button class="btn btn-sm btn-outline" data-action="att-input-student" data-student-id="${s.id}" data-student-name="${this.escapeHtml(s.name)}">
+                            <i class="fas fa-edit"></i> 입력
+                        </button>
+                    </td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+    },
+
+    refreshAttendanceStats() {
+        const el = document.getElementById('att-stats-body');
+        if (!el) return;
+        const students = this.getVisibleStudents();
+        const ym = this._attendanceYM || this.getLocalDateStr().slice(0, 7);
+        el.innerHTML = this._renderAttStatsBody(students, ym);
     },
 
     // 날짜별 학생 출석 입력 UI 로드
