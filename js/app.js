@@ -6227,7 +6227,6 @@ const App = {
         const navState = document.getElementById('report-nav-state');
 
         try {
-            // 컨트롤바 임시 숨김 → 리포트 본문만 캡처
             if (controlCard) controlCard.style.display = 'none';
             if (navState) navState.style.display = 'none';
 
@@ -6244,46 +6243,28 @@ const App = {
                 }
             });
 
-            // 컨트롤바 복원
             if (controlCard) controlCard.style.display = '';
 
+            // 파일명: 학생이름_날짜범위_일간|주간|월간.png
             const student = DataStore.getStudent(this._reportStudentId);
             const period = this._reportPeriod || 'monthly';
-            const periodLabelMap = { daily: '일간', weekly: '주간', monthly: '월간' };
+            const periodLabel = { daily: '일간', weekly: '주간', monthly: '월간' }[period];
             const today = this.getLocalDateStr();
-            const fileName = `${student ? student.name + '_' : ''}${periodLabelMap[period]}_리포트_${today}.png`;
-
-            // 모바일: Web Share API → 카카오톡 등 앱 공유 시트
-            if (navigator.canShare) {
-                canvas.toBlob(async (blob) => {
-                    if (!blob) {
-                        this.toast('이미지 생성에 실패했습니다.', 'error');
-                        restoreBtn();
-                        return;
-                    }
-                    const file = new File([blob], fileName, { type: 'image/png' });
-                    if (navigator.canShare({ files: [file] })) {
-                        try {
-                            await navigator.share({
-                                files: [file],
-                                title: `${student ? student.name : ''} 학습 리포트`,
-                                text: '학습 리포트 이미지입니다.'
-                            });
-                        } catch (shareErr) {
-                            if (shareErr.name !== 'AbortError') {
-                                await this._copyOrDownloadCanvas(canvas, fileName);
-                            }
-                        }
-                    } else {
-                        await this._copyOrDownloadCanvas(canvas, fileName);
-                    }
-                    restoreBtn();
-                }, 'image/png');
+            let dateStr;
+            if (period === 'daily') {
+                dateStr = this._reportDay || today;
+            } else if (period === 'weekly') {
+                const ws = this._reportWeek || this._getWeekStart(today);
+                const we = this._addDays(ws, 6);
+                dateStr = `${ws}~${we.slice(5)}`;
             } else {
-                // PC: 클립보드 복사 → 실패 시 다운로드
-                await this._copyOrDownloadCanvas(canvas, fileName);
-                restoreBtn();
+                dateStr = this._reportYM || today.slice(0, 7);
             }
+            const studentName = student ? student.name : '학생';
+            const fileName = `${studentName}_${dateStr}_${periodLabel}.png`;
+
+            await this._downloadAndCopyCanvas(canvas, fileName, studentName);
+            restoreBtn();
         } catch (err) {
             if (controlCard) controlCard.style.display = '';
             restoreBtn();
@@ -6291,34 +6272,35 @@ const App = {
         }
     },
 
-    async _copyOrDownloadCanvas(canvas, fileName) {
+    async _downloadAndCopyCanvas(canvas, fileName, studentName) {
+        // 1. 다운로드 (항상 실행)
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        // 2. 클립보드 복사 (동시 실행)
+        let copied = false;
         if (navigator.clipboard && window.ClipboardItem) {
             try {
                 await new Promise((resolve, reject) => {
                     canvas.toBlob(async (blob) => {
                         if (!blob) { reject(new Error('blob null')); return; }
                         try {
-                            await navigator.clipboard.write([
-                                new ClipboardItem({ 'image/png': blob })
-                            ]);
-                            this.toast('이미지가 클립보드에 복사되었습니다. 카카오톡 채팅창에 Ctrl+V로 붙여넣으세요.', 'success');
+                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                            copied = true;
                             resolve();
-                        } catch (e) {
-                            reject(e);
-                        }
+                        } catch (e) { reject(e); }
                     }, 'image/png');
                 });
-                return;
-            } catch (_) {
-                // 클립보드 실패 → 다운로드 fallback
-            }
+            } catch (_) {}
         }
-        // 다운로드
-        const link = document.createElement('a');
-        link.download = fileName;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        this.toast('이미지가 저장되었습니다. 카카오톡에서 사진을 첨부해 전송하세요.', 'success');
+
+        if (copied) {
+            this.toast(`💾 ${fileName} 저장 완료 | 클립보드에도 복사됐습니다 — 카카오톡·문자에 Ctrl+V로 바로 붙여넣기하세요.`, 'success');
+        } else {
+            this.toast(`💾 ${fileName} 저장 완료`, 'success');
+        }
     },
 
     // =========================================
