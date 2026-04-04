@@ -399,14 +399,18 @@ const App = {
 
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">
             ${tables.map(t => `
-            <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;align-items:center;gap:12px">
+            <div data-action="export-single" data-key="${t.key}"
+                style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;align-items:center;gap:12px;cursor:pointer;transition:box-shadow 0.15s,transform 0.15s"
+                onmouseover="this.style.boxShadow='0 4px 14px rgba(0,0,0,0.13)';this.style.transform='translateY(-2px)'"
+                onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,0.07)';this.style.transform=''">
                 <div style="width:38px;height:38px;border-radius:10px;background:${t.color}18;display:flex;align-items:center;justify-content:center;color:${t.color};font-size:1rem;flex-shrink:0">
                     <i class="fas ${t.icon}"></i>
                 </div>
-                <div>
+                <div style="flex:1;min-width:0">
                     <div style="font-weight:600;font-size:0.88rem;color:#1F2937">${t.label}</div>
                     <div style="font-size:0.82rem;color:#9CA3AF">${counts[t.key].toLocaleString()}건</div>
                 </div>
+                <i class="fas fa-download" style="font-size:0.75rem;color:#D1D5DB"></i>
             </div>`).join('')}
         </div>
 
@@ -430,6 +434,82 @@ const App = {
                 e.currentTarget.disabled = false;
                 e.currentTarget.innerHTML = '<i class="fas fa-download"></i> 전체 ZIP 백업';
             });
+    },
+
+    // ─── 개별 테이블 CSV 다운로드 ────────────────────────────
+    async _downloadSingleCSV(key) {
+        const today = this.getLocalDateStr();
+        const T = DataStore.TABLES;
+        await DataStore._ensureLoaded(T.STUDENTS, T.PLANS, T[key.toUpperCase()] || key);
+
+        const toCSV = (rows) => {
+            if (!rows || rows.length === 0) return '\uFEFF데이터 없음\n';
+            const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+            const escape = v => {
+                if (v === null || v === undefined) return '';
+                const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            return '\uFEFF' + keys.join(',') + '\n' + rows.map(r => keys.map(k => escape(r[k])).join(',')).join('\n');
+        };
+
+        const students = DataStore.getStudents();
+        const studentMap = {};
+        students.forEach(s => { studentMap[s.id] = s.name; });
+        const planSubjectMap = {};
+        DataStore.getPlans().forEach(p => { planSubjectMap[p.id] = p.subject || ''; });
+
+        const labelMap = {
+            students: '학생목록', teachers: '교직원', plans: '학습계획', progress: '진도기록',
+            attendance: '출석현황', homework: '숙제관리', grades: '성적현황', comments: '코멘트',
+            consultations: '상담일지', messages: '내부소통', board_posts: '게시판',
+            exam_plans: '시험플래너', tuition: '수업료', schedules: '시간표'
+        };
+
+        let rows;
+        switch (key) {
+            case 'students':
+                rows = students.map(s => ({ 이름:s.name, 학년:s.grade, 학교:s.school||'', 반:s.className||'', 연락처:s.phone||'', 학부모명:s.parentName||'', 학부모연락처:s.parentPhone||'', 등록일:s.regDate||'', 메모:s.memo||'' }));
+                break;
+            case 'teachers':
+                rows = (DataStore._cache['teachers'] || []).map(t => ({ 이름:t.name, 역할:t.role, 이메일:t.email||'', 연락처:t.phone||'' }));
+                break;
+            case 'plans':
+                rows = DataStore.getPlans().map(p => ({ 학생명:studentMap[p.studentId]||p.studentId, 과목:p.subject, 교재:p.textbook||'', 시작일:p.startDate||'', 종료일:p.endDate||'', 총단위:p.totalUnits||0, 완료단위:p.completedUnits||0, 상태:p.status||'' }));
+                break;
+            case 'progress':
+                rows = DataStore.getProgressEntries().map(pr => ({ 학생명:studentMap[pr.studentId]||pr.studentId, 날짜:pr.date||'', 과목:planSubjectMap[pr.planId]||'', 진도량:pr.amount||0, 시작단위:pr.startUnit||'', 끝단위:pr.endUnit||'', 이해도:pr.understanding||'', 메모:pr.note||'' }));
+                break;
+            case 'attendance':
+                rows = DataStore.getAttendances().map(a => ({ 학생명:studentMap[a.studentId]||a.studentId, 날짜:a.date||'', 상태:a.status||'', 메모:a.note||'' }));
+                break;
+            case 'homework':
+                rows = DataStore.getHomework().map(h => ({ 제목:h.title||'', 내용:h.content||'', 마감일:h.dueDate||'', 과목:h.subject||'', 작성자:h.author||'' }));
+                break;
+            case 'grades': {
+                const grades = DataStore.getGrades();
+                const flat = grades.flatMap(g => (g.subjects||[]).map(s => ({ 학생명:studentMap[g.studentId]||g.studentId, 시험명:g.examName||g.examType||'', 시험일:g.examDate||'', 과목:s.subject||'', 점수:s.score||'', 등급:s.grade||'' })));
+                rows = flat.length ? flat : grades.map(g => ({ 학생명:studentMap[g.studentId]||g.studentId, 시험명:g.examName||'', 시험일:g.examDate||'' }));
+                break;
+            }
+            case 'consultations':
+                rows = DataStore.getConsultations().map(c => ({ 학생명:studentMap[c.studentId]||c.studentId, 날짜:c.date||'', 유형:c.type||'', 담당자:c.teacherName||'', 내용:c.content||'' }));
+                break;
+            case 'tuition':
+                rows = DataStore.getTuition().map(t => ({ 학생명:studentMap[t.studentId]||t.studentId, 연월:t.yearMonth||'', 청구액:t.amount||0, 납부액:t.paidAmount||0, 납부일:t.paidDate||'', 상태:t.status||'' }));
+                break;
+            default:
+                rows = DataStore._cache[key] || [];
+        }
+
+        const csv = toCSV(rows);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${labelMap[key] || key}_${today}.csv`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        this.toast(`${labelMap[key] || key} CSV 다운로드 완료`, 'success');
     },
 
     // ─── 전체 ZIP 백업 다운로드 ─────────────────────────────
@@ -3905,6 +3985,12 @@ const App = {
             case 'report-print':
                 window.print();
                 break;
+
+            case 'export-single': {
+                const key = target.dataset.key;
+                if (key) await this._downloadSingleCSV(key);
+                break;
+            }
 
             // 상담 일지 actions
             case 'add-consultation': {
